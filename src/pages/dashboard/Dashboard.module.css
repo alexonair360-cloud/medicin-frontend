@@ -1,0 +1,21 @@
+.container {
+  padding: 2rem;
+}
+
+.title {
+  font-size: 1.875rem; /* 3xl */
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: var(--text-light);
+}
+
+.subtitle {
+  color: var(--text-muted);
+}
+
+body.dark .title {
+  color: #ffffff;
+}
+body.dark .subtitle {
+  color: var(--text-muted-dark);
+}

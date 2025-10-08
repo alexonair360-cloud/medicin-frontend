@@ -1,0 +1,171 @@
+.container {
+  padding: 2rem;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.header h1 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1.8rem;
+}
+
+.actionsRow {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.searchControls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  padding: 0.5rem;
+  border-radius: 8px;
+}
+
+.searchWrap { position: relative; }
+.searchIcon {
+  position: absolute;
+  left: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0.6;
+}
+
+.select {
+  padding: 0.45rem 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.searchInput {
+  width: 260px;
+  padding: 0.6rem 0.9rem;
+  padding-left: 2.25rem; /* leave room for icon */
+  border: 1px solid rgba(var(--primary-rgb), 0.2);
+  border-radius: 0.5rem;
+  background: var(--background-light);
+  color: var(--text-light);
+}
+body.dark .searchInput { background: var(--background-dark); color: #fff; }
+
+/* Table styles aligned with Medicine.module.css */
+.tableWrap {
+  margin-top: 1.5rem;
+  overflow-x: auto;
+  border: 1px solid rgba(34, 197, 94, 0.2); /* using primary rgb fallback */
+  border-radius: 0.5rem;
+  background: var(--background-light);
+}
+body.dark .tableWrap { background: var(--background-dark); }
+
+.table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+.thead { background: color-mix(in oklab, var(--color-primary) 15%, transparent); text-transform: uppercase; font-size: 0.8rem; }
+.th, .td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid rgba(var(--primary-rgb), 0.2); }
+.center { text-align: center; }
+.right { text-align: right; }
+
+.actionLink { color: var(--color-primary); background: transparent; border: none; font-weight: 600; cursor: pointer; }
+.actionLink:hover { text-decoration: underline; }
+
+.dangerLink { color: var(--status-danger); background: transparent; border: none; font-weight: 600; cursor: pointer; margin-left: 0.5rem; margin-right: 0.5rem; }
+.dangerLink:hover { text-decoration: underline; }
+
+.actions { display: flex; gap: 0.5rem; align-items: center; }
+
+/* Two-column layout for VendorOrdersPage */
+.twoCol {
+  display: grid;
+  grid-template-columns: 30% 70%;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.outstanding {
+  color: var(--status-danger);
+  font-weight: 700;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid rgba(var(--primary-rgb), 0.35);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--color-primary) 6%, transparent);
+  overflow: hidden;
+}
+
+.segBtn {
+  padding: 0.35rem 0.85rem;
+  border: none;
+  background: transparent;
+  color: var(--text-light);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.segBtn:not(:last-child) {
+  border-right: 1px solid rgba(var(--primary-rgb), 0.25);
+}
+
+.segBtnActive {
+  background: var(--color-primary);
+  color: white;
+}
+
+.segBtn:hover { background: rgba(var(--primary-rgb), 0.08); }
+.segBtn:focus-visible { outline: 2px solid color-mix(in oklab, var(--color-primary) 60%, white); outline-offset: -2px; }
+
+/* Distinct active colors per status */
+.segBtnPaidActive { background: #16a34a; color: #fff; }   /* green-600 */
+.segBtnUnpaidActive { background: #dc2626; color: #fff; } /* red-600 */
+
+.twoFieldsRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.card {
+  background: var(--background-light);
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.sectionTitle {
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 0.75rem;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 1rem;
+  }
+  
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  
+  .table {
+    display: block;
+    overflow-x: auto;
+  }
+
+  .twoCol {
+    grid-template-columns: 1fr;
+  }
+}

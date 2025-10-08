@@ -1,0 +1,577 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import Style from './Medicine.module.css';
+import api from '../../api/ApiClient';
+import Modal from '../../components/Modal';
+import { toast } from 'react-toastify';
+import VendorSelect from '../../components/vendors/VendorSelect';
+import Loader from '../../components/ui/Loader.jsx';
+
+const SearchIcon = (props) => (
+  <svg className={Style.searchIcon} width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+    <path d="M21 21L16.65 16.65" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2"/>
+  </svg>
+);
+
+const PlusIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6Z"/>
+  </svg>
+);
+
+const Medicine = () => {
+  const [items, setItems] = useState([]);
+  const [stockMap, setStockMap] = useState({}); // { medicineId: totalQty }
+  const [latestBatchMap, setLatestBatchMap] = useState({}); // { medicineId: { batchNo, expiryDate, manufacturingDate, unitPrice, mrp, discountPercent } }
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [stockFilter, setStockFilter] = useState('all'); // all | in | out
+  const [showAdd, setShowAdd] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editing, setEditing] = useState(null); // medicine object
+  const [form, setForm] = useState({
+    name: '',
+    stock: '', defaultLowStockThreshold: '', vendorId: '',
+    batchNo: '', expiryDate: '', manufacturingDate: '', unitPrice: '', mrp: '', discountPercent: '',
+  });
+  const [editBatch, setEditBatch] = useState({ quantity: '', batchNo: '', expiryDate: '', manufacturingDate: '', unitPrice: '', mrp: '', discountPercent: '' });
+  const [formError, setFormError] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null); // medicine object
+  // No two-step delete; we block delete when stock > 0
+
+  const fetchMedicines = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const { data } = await api.get('/medicines');
+      setItems(Array.isArray(data) ? data : (data?.items || []));
+    } catch (e) {
+      setError(e?.response?.data?.message || 'Failed to load medicines');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteClick = (m) => {
+    const current = stockMap[String(m._id)] || 0;
+    if (current > 0) {
+      toast.warn('Cannot delete: stock is greater than 0');
+      return;
+    }
+    setPendingDelete(m);
+    setConfirmOpen(true);
+  };
+
+  const fetchStockSummary = async () => {
+    try {
+      const { data: stock } = await api.get('/inventory/stock-summary');
+      const map = {};
+      (stock || []).forEach(row => {
+        if (row && row._id) {
+          const key = String(row._id);
+          map[key] = row.totalQty || 0;
+        }
+      });
+      setStockMap(map);
+    } catch {
+      // ignore transient stock fetch errors in UI
+    }
+  };
+
+  const fetchLatestBatchSummary = async () => {
+    try {
+      const { data } = await api.get('/inventory/latest-batch-summary');
+      const map = {};
+      (data || []).forEach(row => {
+        if (row && row._id) {
+          const key = String(row._id);
+          map[key] = row;
+        }
+      });
+      setLatestBatchMap(map);
+    } catch {
+      // ignore transient errors
+    }
+  };
+
+  useEffect(() => {
+    fetchMedicines();
+    fetchStockSummary();
+    fetchLatestBatchSummary();
+    const id = setInterval(fetchStockSummary, 10000); // refresh stock every 10s
+    return () => clearInterval(id);
+  }, []);
+
+  // Refresh stock when the page/tab regains focus or becomes visible
+  useEffect(() => {
+    const onFocus = () => fetchStockSummary();
+    const onVis = () => { if (document.visibilityState === 'visible') fetchStockSummary(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, []);
+
+  // If Edit is open and latest batch map arrives later, backfill empty batch fields
+  useEffect(() => {
+    if (!editing) return;
+    const key = String(editing._id);
+    const b = latestBatchMap[key];
+    if (!b) return;
+    setForm(f => ({
+      ...f,
+      batchNo: f.batchNo || b.batchNo || '',
+      expiryDate: f.expiryDate || (b.expiryDate ? new Date(b.expiryDate).toISOString().slice(0, 10) : ''),
+      manufacturingDate: f.manufacturingDate || (b.manufacturingDate ? new Date(b.manufacturingDate).toISOString().slice(0, 10) : ''),
+      unitPrice: f.unitPrice !== '' ? f.unitPrice : (b.unitPrice != null ? String(b.unitPrice) : ''),
+      mrp: f.mrp !== '' ? f.mrp : (b.mrp != null ? String(b.mrp) : ''),
+      discountPercent: f.discountPercent !== '' ? f.discountPercent : (b.discountPercent != null ? String(b.discountPercent) : ''),
+    }));
+  }, [latestBatchMap, editing]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(m => (m.name || '').toLowerCase().includes(q));
+  }, [items, search]);
+
+  const filteredByStock = useMemo(() => {
+    if (stockFilter === 'all') return filtered;
+    return filtered.filter(m => {
+      const qty = stockMap[String(m._id)] || 0;
+      return stockFilter === 'in' ? qty > 0 : qty === 0;
+    });
+  }, [filtered, stockFilter, stockMap]);
+
+  const onChange = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+
+  const submitAdd = async () => {
+    setFormError('');
+    try {
+      // Validate required when initial stock is provided
+      const initialQty = Number(form.stock || 0) || 0;
+      if (initialQty > 0 && !form.expiryDate) {
+        setFormError('Expiry Date is required when adding initial stock');
+        return;
+      }
+      const payload = {
+        name: form.name,
+        defaultLowStockThreshold: form.defaultLowStockThreshold ? Number(form.defaultLowStockThreshold) : 0,
+        vendorId: form.vendorId || undefined,
+      };
+      if (!payload.name) { setFormError('Name is required'); return; }
+      const { data: created } = await api.post('/medicines', payload);
+      // Optimistically update the table immediately
+      setItems(prev => [created, ...prev]);
+      // If initial stock is provided, create a batch and update stock map
+      if (initialQty > 0) {
+        try {
+          await api.post('/inventory/add-batch', {
+            medicineId: created._id,
+            quantity: initialQty,
+            batchNo: form.batchNo || undefined,
+            expiryDate: form.expiryDate || undefined,
+            manufacturingDate: form.manufacturingDate || undefined,
+            unitPrice: form.unitPrice ? Number(form.unitPrice) : undefined,
+            mrp: form.mrp ? Number(form.mrp) : undefined,
+            discountPercent: form.discountPercent !== '' ? Number(form.discountPercent) : undefined,
+            vendorId: form.vendorId || undefined,
+          });
+          setStockMap(prev => {
+            const key = String(created._id);
+            return { ...prev, [key]: (prev[key] || 0) + initialQty };
+          });
+        } catch (_) {
+          // ignore batch add error here, user can refresh stock
+        }
+      } else {
+        setStockMap(prev => {
+          const key = String(created._id);
+          return { ...prev, [key]: prev[key] ?? 0 };
+        });
+      }
+      setShowAdd(false);
+      setForm({ name: '', stock: '', defaultLowStockThreshold: '', vendorId: '', batchNo: '', expiryDate: '', manufacturingDate: '', unitPrice: '', mrp: '', discountPercent: '' });
+      // Optionally refresh in background to stay in sync with server sorting/fields
+      fetchMedicines();
+      fetchStockSummary();
+      toast.success('Medicine added');
+    } catch (e) {
+      const msg = e?.response?.data?.message || 'Failed to add medicine';
+      setFormError(msg);
+      toast.error(msg);
+    }
+  };
+
+  const openEdit = (m) => {
+    setEditing(m);
+    const b = latestBatchMap[String(m._id)] || {};
+    setForm({
+      name: m.name || '',
+      stock: String(stockMap[String(m._id)] ?? 0),
+      defaultLowStockThreshold: typeof m.defaultLowStockThreshold === 'number' ? String(m.defaultLowStockThreshold) : '',
+      vendorId: (m.vendorId && (m.vendorId._id || m.vendorId)) || '',
+      batchNo: b.batchNo || '',
+      expiryDate: b.expiryDate ? new Date(b.expiryDate).toISOString().slice(0, 10) : '',
+      manufacturingDate: b.manufacturingDate ? new Date(b.manufacturingDate).toISOString().slice(0, 10) : '',
+      unitPrice: b.unitPrice != null ? String(b.unitPrice) : '',
+      mrp: b.mrp != null ? String(b.mrp) : '',
+      discountPercent: b.discountPercent != null ? String(b.discountPercent) : '',
+    });
+    setShowEdit(true);
+  };
+
+  const submitEdit = async () => {
+    if (!editing) return;
+    setFormError('');
+    try {
+      const updates = {
+        name: form.name,
+        defaultLowStockThreshold: form.defaultLowStockThreshold ? Number(form.defaultLowStockThreshold) : undefined,
+        vendorId: form.vendorId || undefined,
+      };
+      const { data: updated } = await api.put(`/medicines/${editing._id}`, updates);
+      setItems(prev => prev.map(x => x._id === updated._id ? updated : x));
+      // Adjust stock if changed
+      const current = stockMap[String(editing._id)] || 0;
+      const desired = Number(form.stock || 0) || 0;
+      const delta = desired - current;
+      if (delta !== 0) {
+        await api.post('/inventory/adjust-stock', { medicineId: editing._id, quantityDelta: delta });
+        setStockMap(prev => ({ ...prev, [String(editing._id)]: desired }));
+        toast.success('Stock updated');
+      }
+      // Update latest batch fields
+      try {
+        await api.post('/inventory/update-latest-batch', {
+          medicineId: editing._id,
+          batchNo: form.batchNo || undefined,
+          expiryDate: form.expiryDate || undefined,
+          manufacturingDate: form.manufacturingDate || undefined,
+          unitPrice: form.unitPrice !== '' ? Number(form.unitPrice) : undefined,
+          mrp: form.mrp !== '' ? Number(form.mrp) : undefined,
+          discountPercent: form.discountPercent !== '' ? Number(form.discountPercent) : undefined,
+        });
+        // refresh latest batch cache for UI
+        fetchLatestBatchSummary();
+      } catch (e) {
+        // non-blocking batch update error
+      }
+      setShowEdit(false);
+      setEditing(null);
+      toast.success('Medicine updated');
+      // Refresh in background to ensure populated vendor and server ordering are reflected
+      fetchMedicines();
+      fetchStockSummary();
+    } catch (e) {
+      const msg = e?.response?.data?.message || 'Failed to update medicine';
+      setFormError(msg);
+      toast.error(msg);
+    }
+  };
+
+  return (
+    <div className={Style.page}>
+      {/* Header */}
+      <div className={Style.headerRow}>
+        <h2 className={Style.title}>Medicine Inventory</h2>
+        <button className={Style.addBtn} type="button" onClick={() => setShowAdd(true)}>
+          <PlusIcon />
+          <span>Add Medicine</span>
+        </button>
+      </div>
+
+      {/* Toolbar */}
+      <div className={Style.toolbar}>
+        <div className={Style.searchWrap}>
+          <SearchIcon />
+          <input
+            className={Style.searchInput}
+            type="text"
+            placeholder="Search by medicine name..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className={Style.filterBtns}>
+          <button
+            className={stockFilter === 'all' ? Style.filterPrimary : Style.filterGhost}
+            onClick={() => setStockFilter('all')}
+            aria-pressed={stockFilter === 'all'}
+          >All</button>
+          <button
+            className={stockFilter === 'in' ? Style.filterPrimary : Style.filterGhost}
+            onClick={() => setStockFilter('in')}
+            aria-pressed={stockFilter === 'in'}
+          >In Stock</button>
+          <button
+            className={stockFilter === 'out' ? Style.filterPrimary : Style.filterGhost}
+            onClick={() => setStockFilter('out')}
+            aria-pressed={stockFilter === 'out'}
+          >Out of Stock</button>
+          <button
+            className={Style.filterGhost}
+            onClick={fetchStockSummary}
+            title="Refresh stock"
+          >Refresh</button>
+        </div>
+      </div>
+
+      {error && <div style={{ color: 'var(--status-danger)', marginTop: '0.75rem' }}>{error}</div>}
+
+      {/* Table */}
+      {loading ? (
+        <Loader />
+      ) : (
+        <div className={Style.tableWrap}>
+          <table className={Style.table}>
+            <thead className={Style.thead}>
+              <tr>
+                <th className={Style.th} scope="col">Medicine Name</th>
+                <th className={Style.th} scope="col">Vendor</th>
+                <th className={Style.th} scope="col">Batch No</th>
+                <th className={Style.th} scope="col">Expiry</th>
+                <th className={Style.th} scope="col">Mfg Date</th>
+                <th className={Style.th} scope="col">Unit Price</th>
+                <th className={Style.th} scope="col">MRP</th>
+                <th className={Style.th} scope="col">Discount %</th>
+                <th className={`${Style.th} ${Style.center}`} scope="col">Stock</th>
+                <th className={`${Style.th} ${Style.center}`} scope="col">Threshold</th>
+                <th className={`${Style.th} ${Style.center}`} scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredByStock.length === 0 ? (
+                <tr><td className={Style.td} colSpan={11}>No medicines found.</td></tr>
+              ) : (
+                filteredByStock.map((m) => (
+                  <tr key={m._id}>
+                    <td className={Style.td}>{m.name}</td>
+                    <td className={Style.td}>{m.vendorId ? `${m.vendorId.name || '-'}` + (m.vendorId.phone ? ` (${m.vendorId.phone})` : '') : '-'}</td>
+                    {(() => {
+                      const b = latestBatchMap[String(m._id)];
+                      const fmtINR = (n) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(n || 0));
+                      return (
+                        <>
+                          <td className={Style.td}>{b?.batchNo || '-'}</td>
+                          <td className={Style.td}>{b?.expiryDate ? new Date(b.expiryDate).toLocaleDateString() : '-'}</td>
+                          <td className={Style.td}>{b?.manufacturingDate ? new Date(b.manufacturingDate).toLocaleDateString() : '-'}</td>
+                          <td className={Style.td}>{b?.unitPrice != null ? fmtINR(b.unitPrice) : '-'}</td>
+                          <td className={Style.td}>{b?.mrp != null ? fmtINR(b.mrp) : '-'}</td>
+                          <td className={Style.td}>{b?.discountPercent != null ? `${b.discountPercent}%` : '-'}</td>
+                        </>
+                      );
+                    })()}
+                    <td className={`${Style.td} ${Style.center}`}>{stockMap[String(m._id)] ?? 0}</td>
+                    <td className={`${Style.td} ${Style.center}`}>{typeof m.defaultLowStockThreshold === 'number' ? m.defaultLowStockThreshold : '-'}</td>
+                    <td className={`${Style.td} ${Style.center}`}>
+                      <button className={Style.actionLink} onClick={() => openEdit(m)}>Edit</button>
+                      <button
+                        className={`${Style.dangerLink} ${stockMap[String(m._id)] > 0 ? Style.disabled : ''}`}
+                        aria-disabled={stockMap[String(m._id)] > 0}
+                        onClick={() => handleDeleteClick(m)}
+                        title={stockMap[String(m._id)] > 0 ? 'Cannot delete: stock > 0' : 'Delete'}
+                      >Delete</button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Confirm Delete Modal */}
+      <Modal
+        title="Delete Medicine"
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        footer={(
+          <>
+            <button className={`${Style.filterGhost} ${Style.btn}`} onClick={() => setConfirmOpen(false)}>Cancel</button>
+            <button
+              className={`${Style.filterPrimary} ${Style.btn}`}
+              onClick={async () => {
+                if (!pendingDelete) return;
+                try {
+                  await api.delete(`/medicines/${pendingDelete._id}`);
+                  setItems(prev => prev.filter(x => x._id !== pendingDelete._id));
+                  setStockMap(prev => {
+                    const key = String(pendingDelete._id);
+                    const { [key]: _, ...rest } = prev;
+                    return rest;
+                  });
+                  toast.success('Medicine deleted');
+                } catch (e) {
+                  toast.error(e?.response?.data?.message || 'Failed to delete');
+                } finally {
+                  setConfirmOpen(false);
+                  setPendingDelete(null);
+                }
+              }}
+            >Delete</button>
+          </>
+        )}
+      >
+        <p>Are you sure you want to delete <strong>{pendingDelete?.name}</strong>? This action cannot be undone.</p>
+      </Modal>
+
+      {/* Edit Modal */}
+      <Modal
+        title="Edit Medicine"
+        open={showEdit}
+        onClose={() => setShowEdit(false)}
+        size="lg"
+        footer={(
+          <>
+            <button className={`${Style.filterGhost} ${Style.btn}`} onClick={() => setShowEdit(false)}>Cancel</button>
+            <button className={`${Style.filterPrimary} ${Style.btn}`} onClick={submitEdit}>Save</button>
+          </>
+        )}
+      >
+        <div className={""}>
+          {formError && <div className="mb-2" style={{ color: 'var(--status-danger)' }}>{formError}</div>}
+          <div className={Style.section}>
+            <div className={Style.sectionTitle}>Vendor</div>
+            <VendorSelect
+              value={form.vendorId}
+              onChange={(v) => setForm(f => ({ ...f, vendorId: v?.id ?? v?._id ?? '' }))}
+              placeholder="Select vendor (Name and Phone)"
+            />
+            <div className="form-text">Shown as Name (Phone) to distinguish duplicates.</div>
+          </div>
+          <div className={Style.section}>
+            <div className={Style.sectionTitle}>Basic Details</div>
+            <div className={Style.sectionGrid}>
+              <div>
+                <label className="form-label">Name</label>
+                <input name="name" value={form.name} onChange={onChange} className="form-control" placeholder="e.g. Paracetamol" />
+              </div>
+            </div>
+          </div>
+          <div className={Style.section}>
+            <div className={Style.sectionTitle}>Inventory</div>
+            <div className={Style.sectionGrid}>
+              <div>
+                <label className="form-label">Stock</label>
+                <input name="stock" value={form.stock} onChange={onChange} className="form-control" type="number" min="0" placeholder="e.g. 100" />
+              </div>
+              <div>
+                <label className="form-label">Low Stock Threshold</label>
+                <input name="defaultLowStockThreshold" value={form.defaultLowStockThreshold} onChange={onChange} className="form-control" type="number" min="0" placeholder="e.g. 25" />
+              </div>
+              <div>
+                <label className="form-label">Batch No</label>
+                <input name="batchNo" value={form.batchNo} onChange={onChange} className="form-control" placeholder="e.g. B-123" />
+              </div>
+              <div>
+                <label className="form-label">Expiry Date</label>
+                <input name="expiryDate" value={form.expiryDate} onChange={onChange} className="form-control" type="date" />
+              </div>
+              <div>
+                <label className="form-label">Manufacturing Date</label>
+                <input name="manufacturingDate" value={form.manufacturingDate} onChange={onChange} className="form-control" type="date" />
+              </div>
+              <div>
+                <label className="form-label">Unit Purchase Price</label>
+                <input name="unitPrice" value={form.unitPrice} onChange={onChange} className="form-control" type="number" min="0" step="0.01" placeholder="e.g. 12.50" />
+              </div>
+              <div>
+                <label className="form-label">MRP</label>
+                <input name="mrp" value={form.mrp} onChange={onChange} className="form-control" type="number" min="0" step="0.01" placeholder="e.g. 20.00" />
+              </div>
+              <div>
+                <label className="form-label">Discount %</label>
+                <input name="discountPercent" value={form.discountPercent} onChange={onChange} className="form-control" type="number" min="0" max="100" step="0.01" placeholder="e.g. 5" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </Modal>
+      <Modal
+        title="Add Medicine"
+        open={showAdd}
+        onClose={() => setShowAdd(false)}
+        size="lg"
+        footer={(
+          <>
+            <button className={`${Style.filterGhost} ${Style.btn}`} onClick={() => setShowAdd(false)}>Cancel</button>
+            <button className={`${Style.filterPrimary} ${Style.btn}`} onClick={submitAdd}>Save</button>
+          </>
+        )}
+      >
+        <div className={""}>
+          {formError && <div className="mb-2" style={{ color: 'var(--status-danger)' }}>{formError}</div>}
+          <div className={Style.section}>
+            <div className={Style.sectionTitle}>Vendor</div>
+            <VendorSelect
+              value={form.vendorId}
+              onChange={(v) => setForm(f => ({ ...f, vendorId: v?.id ?? v?._id ?? '' }))}
+              placeholder="Select vendor (Name and Phone)"
+            />
+            <div className="form-text">Shown as Name (Phone) to distinguish duplicates.</div>
+          </div>
+          <div className={Style.section}>
+            <div className={Style.sectionTitle}>Basic Details</div>
+            <div className={Style.sectionGrid}>
+              <div>
+                <label className="form-label">Name</label>
+                <input name="name" value={form.name} onChange={onChange} className="form-control" placeholder="e.g. Paracetamol" />
+              </div>
+            </div>
+          </div>
+          <div className={Style.section}>
+            <div className={Style.sectionTitle}>Inventory</div>
+            <div className={Style.sectionGrid}>
+              <div>
+                <label className="form-label">Initial Stock</label>
+                <input name="stock" value={form.stock} onChange={onChange} className="form-control" type="number" min="0" placeholder="e.g. 100" />
+              </div>
+              <div>
+                <label className="form-label">Low Stock Threshold</label>
+                <input name="defaultLowStockThreshold" value={form.defaultLowStockThreshold} onChange={onChange} className="form-control" type="number" min="0" placeholder="e.g. 25" />
+              </div>
+              <div>
+                <label className="form-label">Batch No</label>
+                <input name="batchNo" value={form.batchNo} onChange={onChange} className="form-control" placeholder="e.g. B-123" />
+              </div>
+              <div>
+                <label className="form-label">Expiry Date</label>
+                <input name="expiryDate" value={form.expiryDate} onChange={onChange} className="form-control" type="date" />
+              </div>
+              <div>
+                <label className="form-label">Manufacturing Date</label>
+                <input name="manufacturingDate" value={form.manufacturingDate} onChange={onChange} className="form-control" type="date" />
+              </div>
+              <div>
+                <label className="form-label">Unit Purchase Price</label>
+                <input name="unitPrice" value={form.unitPrice} onChange={onChange} className="form-control" type="number" min="0" step="0.01" placeholder="e.g. 12.50" />
+              </div>
+              <div>
+                <label className="form-label">MRP</label>
+                <input name="mrp" value={form.mrp} onChange={onChange} className="form-control" type="number" min="0" step="0.01" placeholder="e.g. 20.00" />
+              </div>
+              <div>
+                <label className="form-label">Discount %</label>
+                <input name="discountPercent" value={form.discountPercent} onChange={onChange} className="form-control" type="number" min="0" max="100" step="0.01" placeholder="e.g. 5" />
+              </div>
+            </div>
+            {Number(form.stock) > 0 && form.unitPrice !== '' && (
+              <div className="form-text" style={{ marginTop: '0.5rem' }}>
+                Purchased Amount (calc): {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(
+                  (Number(form.stock || 0) * Number(form.unitPrice || 0)) * (1 - (Number(form.discountPercent || 0) / 100))
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+export default Medicine;
