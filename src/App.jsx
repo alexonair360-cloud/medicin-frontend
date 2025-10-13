@@ -15,9 +15,9 @@ import { useNavigate } from 'react-router-dom';
 import Loader from './components/ui/Loader.jsx';
 const VendorsPage = lazy(() => import('./pages/vendors/VendorsPage'));
 const VendorOrdersPage = lazy(() => import('./pages/vendors/VendorOrdersPage.jsx'));
+const CustomersPage = lazy(() => import('./pages/customers/CustomersPage.jsx'));
+const ReportsPage = lazy(() => import('./pages/reports/ReportsPage.jsx'));
 
-// Placeholder simple pages to wire up navbar routes
-const Reports = () => <div className="container py-4"><h2>Reports</h2></div>;
 const Billing = () => <div className="container py-4"><h2>Billing</h2></div>;
 
 const App = () => {
@@ -55,8 +55,16 @@ const App = () => {
             </ProtectedRoute>
           }
         />
-        <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+        <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
         <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
+        <Route 
+          path="/customers"
+          element={
+            <ProtectedRoute>
+              <CustomersPage />
+            </ProtectedRoute>
+          }
+        />
         <Route 
           path="/vendors" 
           element={

@@ -34,6 +34,7 @@ const Navbar = ({ onRequestLogout }) => {
           <nav className={Style.nav}>
             <NavLink to="/dashboard" className={({isActive}) => isActive ? Style.active : undefined}>Dashboard</NavLink>
             <NavLink to="/medicines" className={({isActive}) => isActive ? Style.active : undefined}>Medicines</NavLink>
+            <NavLink to="/customers" className={({isActive}) => isActive ? Style.active : undefined}>Customers</NavLink>
             <NavLink to="/reports" className={({isActive}) => isActive ? Style.active : undefined}>Reports</NavLink>
             <NavLink to="/billing" className={({isActive}) => isActive ? Style.active : undefined}>Billing</NavLink>
             <NavLink to="/vendors" className={({isActive}) => isActive ? Style.active : undefined}>Vendors</NavLink>

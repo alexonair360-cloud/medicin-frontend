@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Prefer environment variable, fallback to local dev backend
 // Use process.env for tests/Node; in Vite builds you can set VITE_API_BASE_URL via define or adapt here later
-const BASE_URL = (typeof process !== 'undefined' && process.env && process.env.VITE_API_BASE_URL) || 'http://13.202.146.173:4000/api';
+const BASE_URL = (typeof process !== 'undefined' && process.env && process.env.VITE_API_BASE_URL) || 'http://localhost:4000/api';
 
 // Create axios instance
 const api = axios.create({

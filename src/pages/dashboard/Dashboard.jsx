@@ -67,7 +67,7 @@ const Dashboard = () => {
 
   const expiringSoonItems = useMemo(() => {
     const rows = (expiring || []).map(b => ({
-      medicineName: b.medicineName || b.medicine?.name || b.name || '—',
+      medicineName: b.medicineId?.name || b.medicineName || b.medicine?.name || b.name || '—',
       batchNo: b.batchNo || b.batch || '—',
       expiryDate: b.expiryDate || b.expiry || b.date,
       quantity: b.quantity || b.qty || 0,
