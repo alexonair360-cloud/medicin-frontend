@@ -4,6 +4,8 @@ import Loader from '../../components/ui/Loader.jsx';
 import { listCustomers, createCustomer, updateCustomer, deleteCustomer } from '../../api/customerService';
 import Modal from '../../components/Modal.jsx';
 import { toast } from 'react-toastify';
+import { useNavigate } from 'react-router-dom';
+import ReactPaginate from 'react-paginate';
 
 // Placeholder API wiring; replace with real service when backend is ready
 const mockFetchCustomers = async () => {
@@ -16,22 +18,34 @@ const mockFetchCustomers = async () => {
 };
 
 const CustomersPage = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [customers, setCustomers] = useState([]);
   const [query, setQuery] = useState('');
+  const [searchBy, setSearchBy] = useState('phone'); // phone | name | email | customerId
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [page, setPage] = useState(0); // zero-based
+  const [pageSize, setPageSize] = useState(10); // 10 | 20 | 30
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null); // null = add, object = edit
   const [form, setForm] = useState({ customerId: '', name: '', phone: '', email: '', address: '' });
   const [saving, setSaving] = useState(false);
+
+  // Debounce query updates for backend fetch
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 500);
+    return () => clearTimeout(t);
+  }, [query]);
 
   useEffect(() => {
     const fetch = async () => {
       setLoading(true);
       setError('');
       try {
-        const rows = await listCustomers(query);
+        const rows = await listCustomers(debouncedQuery);
         setCustomers(rows);
+        setPage(0); // reset to first page on new search
       } catch (e) {
         setError(e?.response?.data?.message || 'Failed to load customers');
       } finally {
@@ -39,13 +53,18 @@ const CustomersPage = () => {
       }
     };
     fetch();
-  }, [query]);
+  }, [debouncedQuery]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return customers;
-    return customers.filter(c => (c.name || '').toLowerCase().includes(q) || (c.phone || '').includes(q) || (c.email || '').toLowerCase().includes(q));
-  }, [customers, query]);
+  // Reset to first page when page size changes
+  useEffect(() => { setPage(0); }, [pageSize]);
+
+  const pageCount = useMemo(() => Math.ceil((customers?.length || 0) / pageSize) || 1, [customers, pageSize]);
+  const pagedCustomers = useMemo(() => {
+    const start = page * pageSize;
+    return (customers || []).slice(start, start + pageSize);
+  }, [customers, page, pageSize]);
+
+  // Frontend filtering removed; we trust backend results
 
   const openAdd = () => {
     setEditing(null);
@@ -103,8 +122,25 @@ const CustomersPage = () => {
       <div className={styles.header}>
         <h2 className={styles.title}>Customers</h2>
         <div className={styles.toolbar}>
-          <input className={styles.searchInput} placeholder="Search name, phone or email" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <select className={`${styles.searchInput} ${styles.toolbarSelect}`} value={searchBy} onChange={(e) => setSearchBy(e.target.value)}>
+            <option value="phone">Phone</option>
+            <option value="name">Name</option>
+            <option value="email">Email</option>
+            <option value="customerId">Customer ID</option>
+          </select>
+          <input className={`${styles.searchInput} ${styles.toolbarInput}`} placeholder={`Search by ${searchBy}`} value={query} onChange={(e) => setQuery(e.target.value)} />
           <button className={`${styles.button} ${styles.buttonPrimary}`} onClick={openAdd}>Add Customer</button>
+          {/**
+           * Customers per page selector (hidden for now as requested)
+           * <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+           *   <label style={{ fontSize: 12, opacity: 0.8 }}>Customers per page</label>
+           *   <select className={`${styles.searchInput} ${styles.toolbarSelect}`} value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+           *     <option value={10}>10</option>
+           *     <option value={20}>20</option>
+           *     <option value={30}>30</option>
+           *   </select>
+           * </div>
+           */}
         </div>
       </div>
 
@@ -127,9 +163,9 @@ const CustomersPage = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {customers.length === 0 ? (
                 <tr><td className={styles.td} colSpan={7} style={{ padding: '1rem', textAlign: 'center' }}>No customers found</td></tr>
-              ) : filtered.map((c) => (
+              ) : pagedCustomers.map((c) => (
                 <tr key={c._id || c.id}>
                   <td className={styles.td}>{c.customerId || c.id || '—'}</td>
                   <td className={styles.td}>{c.name}</td>
@@ -141,12 +177,38 @@ const CustomersPage = () => {
                     <div className={styles.actions}>
                       <button className={styles.button} onClick={() => openEdit(c)}>Edit</button>
                       <button className={styles.button} onClick={() => onDelete(c)}>Delete</button>
+                      <button className={`${styles.button} ${styles.buttonPrimary}`} onClick={() => navigate(`/customers/${c._id || c.id}/billing`)}>Bills</button>
                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {/* Pagination */}
+          {customers.length > 0 && (
+            <div className={styles.paginationWrap}>
+              <ReactPaginate
+                breakLabel="…"
+                nextLabel=">"
+                onPageChange={(ev) => setPage(ev.selected)}
+                pageRangeDisplayed={3}
+                marginPagesDisplayed={1}
+                pageCount={pageCount}
+                previousLabel="<"
+                renderOnZeroPageCount={null}
+                forcePage={page}
+                containerClassName={styles.pagination}
+                pageClassName={styles.pageItem}
+                pageLinkClassName={styles.pageLink}
+                activeClassName={styles.active}
+                previousClassName={styles.pageItem}
+                nextClassName={styles.pageItem}
+                previousLinkClassName={styles.pageLink}
+                nextLinkClassName={styles.pageLink}
+                disabledClassName={styles.disabled}
+              />
+            </div>
+          )}
         </div>
       )}
 

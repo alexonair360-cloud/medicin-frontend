@@ -19,7 +19,6 @@ const BellIcon = () => (
 
 const Navbar = ({ onRequestLogout }) => {
   const navigate = useNavigate();
-
   return (
     <header className={Style.navbar}>
       <div className={Style.inner}>
@@ -36,11 +35,9 @@ const Navbar = ({ onRequestLogout }) => {
             <NavLink to="/medicines" className={({isActive}) => isActive ? Style.active : undefined}>Medicines</NavLink>
             <NavLink to="/customers" className={({isActive}) => isActive ? Style.active : undefined}>Customers</NavLink>
             <NavLink to="/reports" className={({isActive}) => isActive ? Style.active : undefined}>Reports</NavLink>
-            <NavLink to="/billing" className={({isActive}) => isActive ? Style.active : undefined}>Billing</NavLink>
             <NavLink to="/vendors" className={({isActive}) => isActive ? Style.active : undefined}>Vendors</NavLink>
           </nav>
         </div>
-
         <div className={Style.controls}>
           <button className={Style.logoutBtn} onClick={() => onRequestLogout && onRequestLogout()}>Logout</button>
         </div>

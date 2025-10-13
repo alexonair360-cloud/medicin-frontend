@@ -5,6 +5,8 @@ import Modal from '../../components/Modal';
 import { toast } from 'react-toastify';
 import VendorSelect from '../../components/vendors/VendorSelect';
 import Loader from '../../components/ui/Loader.jsx';
+import { useNavigate } from 'react-router-dom';
+import ReactPaginate from 'react-paginate';
 
 const SearchIcon = (props) => (
   <svg className={Style.searchIcon} width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
@@ -20,9 +22,11 @@ const PlusIcon = () => (
 );
 
 const Medicine = () => {
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [stockMap, setStockMap] = useState({}); // { medicineId: totalQty }
   const [latestBatchMap, setLatestBatchMap] = useState({}); // { medicineId: { batchNo, expiryDate, manufacturingDate, unitPrice, mrp, discountPercent } }
+  const [statsMap, setStatsMap] = useState({}); // { medicineId: { totalBatches, expiringSoonCount, totalInStock } }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
@@ -32,14 +36,14 @@ const Medicine = () => {
   const [editing, setEditing] = useState(null); // medicine object
   const [form, setForm] = useState({
     name: '',
-    stock: '', defaultLowStockThreshold: '', vendorId: '',
-    batchNo: '', expiryDate: '', manufacturingDate: '', unitPrice: '', mrp: '', discountPercent: '',
+    defaultLowStockThreshold: '', vendorId: '',
   });
-  const [editBatch, setEditBatch] = useState({ quantity: '', batchNo: '', expiryDate: '', manufacturingDate: '', unitPrice: '', mrp: '', discountPercent: '' });
   const [formError, setFormError] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null); // medicine object
   // No two-step delete; we block delete when stock > 0
+  const [page, setPage] = useState(0); // zero-based
+  const [pageSize] = useState(10); // fixed per request
 
   const fetchMedicines = async () => {
     setLoading(true);
@@ -51,6 +55,25 @@ const Medicine = () => {
       setError(e?.response?.data?.message || 'Failed to load medicines');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchMedicineStats = async () => {
+    try {
+      const { data } = await api.get('/inventory/medicine-stats?expDays=30');
+      const map = {};
+      (data || []).forEach((row) => {
+        if (row && row._id) {
+          map[String(row._id)] = {
+            totalBatches: row.totalBatches || 0,
+            expiringSoonCount: row.expiringSoonCount || 0,
+            totalInStock: row.totalInStock || 0,
+          };
+        }
+      });
+      setStatsMap(map);
+    } catch {
+      // non-blocking
     }
   };
 
@@ -100,6 +123,7 @@ const Medicine = () => {
     fetchMedicines();
     fetchStockSummary();
     fetchLatestBatchSummary();
+    fetchMedicineStats();
     const id = setInterval(fetchStockSummary, 10000); // refresh stock every 10s
     return () => clearInterval(id);
   }, []);
@@ -116,22 +140,6 @@ const Medicine = () => {
     };
   }, []);
 
-  // If Edit is open and latest batch map arrives later, backfill empty batch fields
-  useEffect(() => {
-    if (!editing) return;
-    const key = String(editing._id);
-    const b = latestBatchMap[key];
-    if (!b) return;
-    setForm(f => ({
-      ...f,
-      batchNo: f.batchNo || b.batchNo || '',
-      expiryDate: f.expiryDate || (b.expiryDate ? new Date(b.expiryDate).toISOString().slice(0, 10) : ''),
-      manufacturingDate: f.manufacturingDate || (b.manufacturingDate ? new Date(b.manufacturingDate).toISOString().slice(0, 10) : ''),
-      unitPrice: f.unitPrice !== '' ? f.unitPrice : (b.unitPrice != null ? String(b.unitPrice) : ''),
-      mrp: f.mrp !== '' ? f.mrp : (b.mrp != null ? String(b.mrp) : ''),
-      discountPercent: f.discountPercent !== '' ? f.discountPercent : (b.discountPercent != null ? String(b.discountPercent) : ''),
-    }));
-  }, [latestBatchMap, editing]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -147,17 +155,20 @@ const Medicine = () => {
     });
   }, [filtered, stockFilter, stockMap]);
 
+  // Reset to first page when search/filter changes or data updates
+  useEffect(() => { setPage(0); }, [search, stockFilter, items.length]);
+
+  const pageCount = useMemo(() => Math.ceil((filteredByStock?.length || 0) / pageSize) || 1, [filteredByStock, pageSize]);
+  const pagedItems = useMemo(() => {
+    const start = page * pageSize;
+    return (filteredByStock || []).slice(start, start + pageSize);
+  }, [filteredByStock, page, pageSize]);
+
   const onChange = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
 
   const submitAdd = async () => {
     setFormError('');
     try {
-      // Validate required when initial stock is provided
-      const initialQty = Number(form.stock || 0) || 0;
-      if (initialQty > 0 && !form.expiryDate) {
-        setFormError('Expiry Date is required when adding initial stock');
-        return;
-      }
       const payload = {
         name: form.name,
         defaultLowStockThreshold: form.defaultLowStockThreshold ? Number(form.defaultLowStockThreshold) : 0,
@@ -167,38 +178,10 @@ const Medicine = () => {
       const { data: created } = await api.post('/medicines', payload);
       // Optimistically update the table immediately
       setItems(prev => [created, ...prev]);
-      // If initial stock is provided, create a batch and update stock map
-      if (initialQty > 0) {
-        try {
-          await api.post('/inventory/add-batch', {
-            medicineId: created._id,
-            quantity: initialQty,
-            batchNo: form.batchNo || undefined,
-            expiryDate: form.expiryDate || undefined,
-            manufacturingDate: form.manufacturingDate || undefined,
-            unitPrice: form.unitPrice ? Number(form.unitPrice) : undefined,
-            mrp: form.mrp ? Number(form.mrp) : undefined,
-            discountPercent: form.discountPercent !== '' ? Number(form.discountPercent) : undefined,
-            vendorId: form.vendorId || undefined,
-          });
-          setStockMap(prev => {
-            const key = String(created._id);
-            return { ...prev, [key]: (prev[key] || 0) + initialQty };
-          });
-        } catch (_) {
-          // ignore batch add error here, user can refresh stock
-        }
-      } else {
-        setStockMap(prev => {
-          const key = String(created._id);
-          return { ...prev, [key]: prev[key] ?? 0 };
-        });
-      }
       setShowAdd(false);
-      setForm({ name: '', stock: '', defaultLowStockThreshold: '', vendorId: '', batchNo: '', expiryDate: '', manufacturingDate: '', unitPrice: '', mrp: '', discountPercent: '' });
+      setForm({ name: '', defaultLowStockThreshold: '', vendorId: '' });
       // Optionally refresh in background to stay in sync with server sorting/fields
       fetchMedicines();
-      fetchStockSummary();
       toast.success('Medicine added');
     } catch (e) {
       const msg = e?.response?.data?.message || 'Failed to add medicine';
@@ -209,18 +192,10 @@ const Medicine = () => {
 
   const openEdit = (m) => {
     setEditing(m);
-    const b = latestBatchMap[String(m._id)] || {};
     setForm({
       name: m.name || '',
-      stock: String(stockMap[String(m._id)] ?? 0),
       defaultLowStockThreshold: typeof m.defaultLowStockThreshold === 'number' ? String(m.defaultLowStockThreshold) : '',
       vendorId: (m.vendorId && (m.vendorId._id || m.vendorId)) || '',
-      batchNo: b.batchNo || '',
-      expiryDate: b.expiryDate ? new Date(b.expiryDate).toISOString().slice(0, 10) : '',
-      manufacturingDate: b.manufacturingDate ? new Date(b.manufacturingDate).toISOString().slice(0, 10) : '',
-      unitPrice: b.unitPrice != null ? String(b.unitPrice) : '',
-      mrp: b.mrp != null ? String(b.mrp) : '',
-      discountPercent: b.discountPercent != null ? String(b.discountPercent) : '',
     });
     setShowEdit(true);
   };
@@ -236,37 +211,11 @@ const Medicine = () => {
       };
       const { data: updated } = await api.put(`/medicines/${editing._id}`, updates);
       setItems(prev => prev.map(x => x._id === updated._id ? updated : x));
-      // Adjust stock if changed
-      const current = stockMap[String(editing._id)] || 0;
-      const desired = Number(form.stock || 0) || 0;
-      const delta = desired - current;
-      if (delta !== 0) {
-        await api.post('/inventory/adjust-stock', { medicineId: editing._id, quantityDelta: delta });
-        setStockMap(prev => ({ ...prev, [String(editing._id)]: desired }));
-        toast.success('Stock updated');
-      }
-      // Update latest batch fields
-      try {
-        await api.post('/inventory/update-latest-batch', {
-          medicineId: editing._id,
-          batchNo: form.batchNo || undefined,
-          expiryDate: form.expiryDate || undefined,
-          manufacturingDate: form.manufacturingDate || undefined,
-          unitPrice: form.unitPrice !== '' ? Number(form.unitPrice) : undefined,
-          mrp: form.mrp !== '' ? Number(form.mrp) : undefined,
-          discountPercent: form.discountPercent !== '' ? Number(form.discountPercent) : undefined,
-        });
-        // refresh latest batch cache for UI
-        fetchLatestBatchSummary();
-      } catch (e) {
-        // non-blocking batch update error
-      }
       setShowEdit(false);
       setEditing(null);
       toast.success('Medicine updated');
       // Refresh in background to ensure populated vendor and server ordering are reflected
       fetchMedicines();
-      fetchStockSummary();
     } catch (e) {
       const msg = e?.response?.data?.message || 'Failed to update medicine';
       setFormError(msg);
@@ -333,55 +282,93 @@ const Medicine = () => {
               <tr>
                 <th className={Style.th} scope="col">Medicine Name</th>
                 <th className={Style.th} scope="col">Vendor</th>
-                <th className={Style.th} scope="col">Batch No</th>
-                <th className={Style.th} scope="col">Expiry</th>
-                <th className={Style.th} scope="col">Mfg Date</th>
-                <th className={Style.th} scope="col">Unit Price</th>
-                <th className={Style.th} scope="col">MRP</th>
-                <th className={Style.th} scope="col">Discount %</th>
-                <th className={`${Style.th} ${Style.center}`} scope="col">Stock</th>
+                <th className={`${Style.th} ${Style.center}`} scope="col">Total Batches</th>
+                <th className={`${Style.th} ${Style.center}`} scope="col">Expiring Soon (30d)</th>
+                <th className={`${Style.th} ${Style.center}`} scope="col">In Stock</th>
                 <th className={`${Style.th} ${Style.center}`} scope="col">Threshold</th>
                 <th className={`${Style.th} ${Style.center}`} scope="col">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredByStock.length === 0 ? (
-                <tr><td className={Style.td} colSpan={11}>No medicines found.</td></tr>
+                <tr><td className={Style.td} colSpan={7}>No medicines found.</td></tr>
               ) : (
-                filteredByStock.map((m) => (
+                pagedItems.map((m) => (
                   <tr key={m._id}>
                     <td className={Style.td}>{m.name}</td>
                     <td className={Style.td}>{m.vendorId ? `${m.vendorId.name || '-'}` + (m.vendorId.phone ? ` (${m.vendorId.phone})` : '') : '-'}</td>
                     {(() => {
-                      const b = latestBatchMap[String(m._id)];
-                      const fmtINR = (n) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(n || 0));
+                      const s = statsMap[String(m._id)] || {};
+                      const inStock = (typeof s.totalInStock === 'number') ? s.totalInStock : (stockMap[String(m._id)] ?? 0);
                       return (
                         <>
-                          <td className={Style.td}>{b?.batchNo || '-'}</td>
-                          <td className={Style.td}>{b?.expiryDate ? new Date(b.expiryDate).toLocaleDateString() : '-'}</td>
-                          <td className={Style.td}>{b?.manufacturingDate ? new Date(b.manufacturingDate).toLocaleDateString() : '-'}</td>
-                          <td className={Style.td}>{b?.unitPrice != null ? fmtINR(b.unitPrice) : '-'}</td>
-                          <td className={Style.td}>{b?.mrp != null ? fmtINR(b.mrp) : '-'}</td>
-                          <td className={Style.td}>{b?.discountPercent != null ? `${b.discountPercent}%` : '-'}</td>
+                          <td className={`${Style.td} ${Style.center}`}>{s.totalBatches ?? '-'}</td>
+                          <td className={`${Style.td} ${Style.center}`}>{s.expiringSoonCount ?? '-'}</td>
+                          <td className={`${Style.td} ${Style.center}`}>{inStock}</td>
                         </>
                       );
                     })()}
-                    <td className={`${Style.td} ${Style.center}`}>{stockMap[String(m._id)] ?? 0}</td>
                     <td className={`${Style.td} ${Style.center}`}>{typeof m.defaultLowStockThreshold === 'number' ? m.defaultLowStockThreshold : '-'}</td>
                     <td className={`${Style.td} ${Style.center}`}>
-                      <button className={Style.actionLink} onClick={() => openEdit(m)}>Edit</button>
+                      <button
+                        onClick={() => openEdit(m)}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'var(--color-primary)',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >Edit</button>
                       <button
                         className={`${Style.dangerLink} ${stockMap[String(m._id)] > 0 ? Style.disabled : ''}`}
                         aria-disabled={stockMap[String(m._id)] > 0}
                         onClick={() => handleDeleteClick(m)}
                         title={stockMap[String(m._id)] > 0 ? 'Cannot delete: stock > 0' : 'Delete'}
+                        style={{ marginLeft: '8px' }}
                       >Delete</button>
+                      <button
+                        style={{
+                          marginLeft: '8px',
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'var(--color-primary)',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => navigate(`/medicines/${m._id}/batches`)}
+                        title="View and manage batches for this medicine"
+                      >Batches</button>
                     </td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
+          {/* Pagination */}
+          {filteredByStock.length > 0 && (
+            <div className={Style.paginationWrap}>
+              <ReactPaginate
+                breakLabel="…"
+                nextLabel=">"
+                onPageChange={(ev) => setPage(ev.selected)}
+                pageRangeDisplayed={3}
+                marginPagesDisplayed={1}
+                pageCount={pageCount}
+                previousLabel="<"
+                renderOnZeroPageCount={null}
+                forcePage={page}
+                containerClassName={Style.pagination}
+                pageLinkClassName={Style.pageLink}
+                activeClassName={Style.active}
+                previousClassName={Style.pageItem}
+                nextClassName={Style.pageItem}
+                previousLinkClassName={Style.pageLink}
+                nextLinkClassName={Style.pageLink}
+                disabledClassName={Style.disabled}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -451,127 +438,15 @@ const Medicine = () => {
                 <label className="form-label">Name</label>
                 <input name="name" value={form.name} onChange={onChange} className="form-control" placeholder="e.g. Paracetamol" />
               </div>
-            </div>
-          </div>
-          <div className={Style.section}>
-            <div className={Style.sectionTitle}>Inventory</div>
-            <div className={Style.sectionGrid}>
-              <div>
-                <label className="form-label">Stock</label>
-                <input name="stock" value={form.stock} onChange={onChange} className="form-control" type="number" min="0" placeholder="e.g. 100" />
-              </div>
               <div>
                 <label className="form-label">Low Stock Threshold</label>
                 <input name="defaultLowStockThreshold" value={form.defaultLowStockThreshold} onChange={onChange} className="form-control" type="number" min="0" placeholder="e.g. 25" />
               </div>
-              <div>
-                <label className="form-label">Batch No</label>
-                <input name="batchNo" value={form.batchNo} onChange={onChange} className="form-control" placeholder="e.g. B-123" />
-              </div>
-              <div>
-                <label className="form-label">Expiry Date</label>
-                <input name="expiryDate" value={form.expiryDate} onChange={onChange} className="form-control" type="date" />
-              </div>
-              <div>
-                <label className="form-label">Manufacturing Date</label>
-                <input name="manufacturingDate" value={form.manufacturingDate} onChange={onChange} className="form-control" type="date" />
-              </div>
-              <div>
-                <label className="form-label">Unit Purchase Price</label>
-                <input name="unitPrice" value={form.unitPrice} onChange={onChange} className="form-control" type="number" min="0" step="0.01" placeholder="e.g. 12.50" />
-              </div>
-              <div>
-                <label className="form-label">MRP</label>
-                <input name="mrp" value={form.mrp} onChange={onChange} className="form-control" type="number" min="0" step="0.01" placeholder="e.g. 20.00" />
-              </div>
-              <div>
-                <label className="form-label">Discount %</label>
-                <input name="discountPercent" value={form.discountPercent} onChange={onChange} className="form-control" type="number" min="0" max="100" step="0.01" placeholder="e.g. 5" />
-              </div>
             </div>
-          </div>
-        </div>
-      </Modal>
-      <Modal
-        title="Add Medicine"
-        open={showAdd}
-        onClose={() => setShowAdd(false)}
-        size="lg"
-        footer={(
-          <>
-            <button className={`${Style.filterGhost} ${Style.btn}`} onClick={() => setShowAdd(false)}>Cancel</button>
-            <button className={`${Style.filterPrimary} ${Style.btn}`} onClick={submitAdd}>Save</button>
-          </>
-        )}
-      >
-        <div className={""}>
-          {formError && <div className="mb-2" style={{ color: 'var(--status-danger)' }}>{formError}</div>}
-          <div className={Style.section}>
-            <div className={Style.sectionTitle}>Vendor</div>
-            <VendorSelect
-              value={form.vendorId}
-              onChange={(v) => setForm(f => ({ ...f, vendorId: v?.id ?? v?._id ?? '' }))}
-              placeholder="Select vendor (Name and Phone)"
-            />
-            <div className="form-text">Shown as Name (Phone) to distinguish duplicates.</div>
-          </div>
-          <div className={Style.section}>
-            <div className={Style.sectionTitle}>Basic Details</div>
-            <div className={Style.sectionGrid}>
-              <div>
-                <label className="form-label">Name</label>
-                <input name="name" value={form.name} onChange={onChange} className="form-control" placeholder="e.g. Paracetamol" />
-              </div>
-            </div>
-          </div>
-          <div className={Style.section}>
-            <div className={Style.sectionTitle}>Inventory</div>
-            <div className={Style.sectionGrid}>
-              <div>
-                <label className="form-label">Initial Stock</label>
-                <input name="stock" value={form.stock} onChange={onChange} className="form-control" type="number" min="0" placeholder="e.g. 100" />
-              </div>
-              <div>
-                <label className="form-label">Low Stock Threshold</label>
-                <input name="defaultLowStockThreshold" value={form.defaultLowStockThreshold} onChange={onChange} className="form-control" type="number" min="0" placeholder="e.g. 25" />
-              </div>
-              <div>
-                <label className="form-label">Batch No</label>
-                <input name="batchNo" value={form.batchNo} onChange={onChange} className="form-control" placeholder="e.g. B-123" />
-              </div>
-              <div>
-                <label className="form-label">Expiry Date</label>
-                <input name="expiryDate" value={form.expiryDate} onChange={onChange} className="form-control" type="date" />
-              </div>
-              <div>
-                <label className="form-label">Manufacturing Date</label>
-                <input name="manufacturingDate" value={form.manufacturingDate} onChange={onChange} className="form-control" type="date" />
-              </div>
-              <div>
-                <label className="form-label">Unit Purchase Price</label>
-                <input name="unitPrice" value={form.unitPrice} onChange={onChange} className="form-control" type="number" min="0" step="0.01" placeholder="e.g. 12.50" />
-              </div>
-              <div>
-                <label className="form-label">MRP</label>
-                <input name="mrp" value={form.mrp} onChange={onChange} className="form-control" type="number" min="0" step="0.01" placeholder="e.g. 20.00" />
-              </div>
-              <div>
-                <label className="form-label">Discount %</label>
-                <input name="discountPercent" value={form.discountPercent} onChange={onChange} className="form-control" type="number" min="0" max="100" step="0.01" placeholder="e.g. 5" />
-              </div>
-            </div>
-            {Number(form.stock) > 0 && form.unitPrice !== '' && (
-              <div className="form-text" style={{ marginTop: '0.5rem' }}>
-                Purchased Amount (calc): {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(
-                  (Number(form.stock || 0) * Number(form.unitPrice || 0)) * (1 - (Number(form.discountPercent || 0) / 100))
-                )}
-              </div>
-            )}
           </div>
         </div>
       </Modal>
     </div>
   );
 };
-
 export default Medicine;

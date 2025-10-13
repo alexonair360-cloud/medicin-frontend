@@ -15,7 +15,8 @@
 .toolbar {
   display: flex;
   gap: 0.5rem;
-  flex-wrap: wrap;
+  align-items: center;
+  flex-wrap: nowrap;
 }
 .tableWrap {
   margin-top: 1.5rem;
@@ -30,9 +31,36 @@ body.dark .tableWrap { background: var(--background-dark); }
 .thead { background: color-mix(in oklab, var(--color-primary) 15%, transparent); text-transform: uppercase; font-size: 0.8rem; }
 .th, .td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid rgba(var(--primary-rgb), 0.2); }
 .center { text-align: center; }
-.actions { display: flex; gap: 0.5rem; }
+.actions { display: flex; gap: 0.5rem; justify-content: center; align-items: center; }
 .searchInput { padding: 0.45rem 0.6rem; border: 1px solid #e5e7eb; border-radius: 8px; }
 /* Ensure inputs/textareas in modal take full width */
 .searchInput { width: 100%; }
+.toolbarInput { width: 280px; }
+.toolbarSelect { width: 160px; }
 .button { padding: 0.45rem 0.75rem; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); background: var(--background-light); font-weight: 600; cursor: pointer; }
 .buttonPrimary { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+
+/* Pagination */
+.paginationWrap { display: flex; justify-content: center; padding: 0.75rem; }
+.pagination { display: flex; list-style: none; gap: 0.25rem; padding: 0; margin: 0; }
+.pageLink { 
+  display: inline-block;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(var(--primary-rgb), 0.25);
+  background: var(--background-light);
+  line-height: 32px;
+  text-align: center;
+  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
+}
+.pageLink:hover, .pageLink:focus, .pageLink:visited { text-decoration: none; }
+.active .pageLink { 
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+.disabled .pageLink { opacity: 0.5; cursor: not-allowed; }

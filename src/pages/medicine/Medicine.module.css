@@ -97,18 +97,64 @@ body.dark .tableWrap { background: var(--background-dark); }
 .table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
 .thead { background: color-mix(in oklab, var(--color-primary) 15%, transparent); text-transform: uppercase; font-size: 0.8rem; }
 .th, .td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid rgba(var(--primary-rgb), 0.2); }
-.center { text-align: center; }
 .right { text-align: right; }
 
 .statusDanger { color: var(--status-danger); font-weight: 700; }
 .statusWarn { color: var(--status-warning); font-weight: 700; }
 
-.actionLink { color: var(--color-primary); background: transparent; border: none; font-weight: 600; cursor: pointer; }
-.actionLink:hover { text-decoration: underline; }
-
-.dangerLink { color: var(--status-danger); background: transparent; border: none; font-weight: 600; cursor: pointer; margin-left: 0.5rem; }
+.dangerLink { color: var(--status-danger) !important; background: transparent; border: none; font-weight: 600; cursor: pointer; margin-left: 0.5rem; }
 .dangerLink:hover { text-decoration: underline; }
+
+/* Red outline button variant for destructive actions */
+.dangerBtn {
+  padding: 0.35rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--status-danger);
+  background: color-mix(in oklab, var(--status-danger) 8%, transparent);
+  color: var(--status-danger) !important;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: none;
+}
+.dangerBtn:hover { filter: brightness(0.98); }
+
+/* Compact action buttons (used for Edit/Batches) */
+.actionBtn { 
+  padding: 0.35rem 0.6rem; 
+  border-radius: 8px; 
+  border: 1px solid rgba(var(--primary-rgb), 0.25); 
+  background: var(--background-light); 
+  font-weight: 600; 
+  cursor: pointer; 
+}
+.actionBtnPrimary { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+.actionBtnGhost { background: rgba(var(--primary-rgb), 0.12); color: var(--color-primary); }
 
 /* Generic disabled visual state */
 .disabled { opacity: 0.5; cursor: not-allowed; }
-.dangerLink.disabled:hover { text-decoration: none; }
+.dangerLink.disabled { color: var(--status-danger) !important; }
+/* Pagination */
+.paginationWrap { display: flex; justify-content: center; padding: 0.75rem; }
+.pagination { display: flex; list-style: none; gap: 0.25rem; padding: 0; margin: 0; }
+.pageItem { display: inline-block; }
+.pageLink {
+  display: inline-block;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(var(--primary-rgb), 0.25);
+  background: var(--background-light);
+  line-height: 32px;
+  text-align: center;
+  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
+}
+.pageLink:hover, .pageLink:focus, .pageLink:visited { text-decoration: none; }
+.active .pageLink {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+.disabled .pageLink { opacity: 0.5; cursor: not-allowed; }
