@@ -188,8 +188,17 @@ const BatchesPage = () => {
                   <td className={Style.td}>{b.vendorId ? `${b.vendorId.name || '-'}` + (b.vendorId.phone ? ` (${b.vendorId.phone})` : '') : '-'}</td>
                   <td className={Style.td}>{b.purchaseDate ? new Date(b.purchaseDate).toLocaleDateString() : '-'}</td>
                   <td className={`${Style.td} ${Style.center}`}>
-                    <button className={Style.actionLink} onClick={() => openEdit(b)}>Edit</button>
-                    <button className={`${Style.dangerLink}`} onClick={() => { setPendingDelete(b); setConfirmOpen(true); }}>Delete</button>
+                    <button
+                      onClick={() => openEdit(b)}
+                      style={{
+                        border: 'none',
+                        background: 'transparent',
+                        color: 'var(--color-primary)',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >Edit</button>
+                    <button className={`${Style.dangerLink}`} onClick={() => { setPendingDelete(b); setConfirmOpen(true); }} style={{ marginLeft: '8px' }}>Delete</button>
                   </td>
                 </tr>
               ))}
