@@ -50,12 +50,22 @@ const ReportsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const tableRef = useRef(null);
+  // Sales date range
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const defaultFrom = new Date(Date.now() - 29 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const [fromDate, setFromDate] = useState(defaultFrom);
+  const [toDate, setToDate] = useState(todayISO);
+  const [debouncedFrom, setDebouncedFrom] = useState(defaultFrom);
+  const [debouncedTo, setDebouncedTo] = useState(todayISO);
 
   // Data stores
   const [expiring, setExpiring] = useState([]);
   const [medicines, setMedicines] = useState([]);
   const [stockSummary, setStockSummary] = useState([]);
-  const [salesSeries, setSalesSeries] = useState([]);
+  const [salesSummary, setSalesSummary] = useState(null);
+  const [salesDaily, setSalesDaily] = useState([]);
+  const [topCustomers, setTopCustomers] = useState([]);
+  const [topProducts, setTopProducts] = useState([]);
 
   useEffect(() => {
     const fetch = async () => {
@@ -73,9 +83,12 @@ const ReportsPage = () => {
           setMedicines(meds || []);
           setStockSummary(stock || []);
         } else if (type === 'sales') {
-          const sales = await getSalesReport({ range: 'last30' });
-          const series = Array.isArray(sales) ? sales : (sales?.series || sales?.data || []);
-          setSalesSeries(series);
+          const params = { from: debouncedFrom, to: debouncedTo };
+          const data = await getSalesReport(params);
+          setSalesSummary(data?.summary || null);
+          setSalesDaily(Array.isArray(data?.daily) ? data.daily : []);
+          setTopCustomers(Array.isArray(data?.topCustomers) ? data.topCustomers : []);
+          setTopProducts(Array.isArray(data?.topProducts) ? data.topProducts : []);
         }
       } catch (e) {
         setError(e?.response?.data?.message || 'Failed to load report');
@@ -84,7 +97,17 @@ const ReportsPage = () => {
       }
     };
     fetch();
-  }, [type]);
+  }, [type, debouncedFrom, debouncedTo]);
+
+  // Debounce date range changes for sales
+  useEffect(() => {
+    if (type !== 'sales') return; // only when sales is active
+    const t = setTimeout(() => {
+      setDebouncedFrom(fromDate);
+      setDebouncedTo(toDate);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [type, fromDate, toDate]);
 
   const stockMap = useMemo(() => {
     const map = {};
@@ -118,6 +141,14 @@ const ReportsPage = () => {
             <option value="lowstock">Low Stock Report</option>
             <option value="sales">Sales Report</option>
           </select>
+          {type === 'sales' && (
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <label style={{ fontSize: 12, opacity: 0.8 }}>From</label>
+              <input type="date" className={styles.select} value={fromDate} max={toDate} onChange={(e) => setFromDate(e.target.value)} />
+              <label style={{ fontSize: 12, opacity: 0.8 }}>To</label>
+              <input type="date" className={styles.select} value={toDate} min={fromDate} onChange={(e) => setToDate(e.target.value)} />
+            </div>
+          )}
           <button className={styles.button} onClick={onExport}>Export Excel</button>
         </div>
       </div>
@@ -181,26 +212,111 @@ const ReportsPage = () => {
           )}
 
           {type === 'sales' && (
-            <div className={styles.tableWrap}>
-              <table className={styles.table} ref={tableRef}>
-                <thead className={styles.thead}>
-                  <tr>
-                    <th className={styles.th}>Date</th>
-                    <th className={`${styles.th} ${styles.center}`}>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(salesSeries || []).length === 0 ? (
-                    <tr><td className={styles.td} colSpan={2} style={{ padding: '1rem', textAlign: 'center' }}>No data</td></tr>
-                  ) : (salesSeries || []).map((s, idx) => (
-                    <tr key={`${s.date || s.day || s._id || s.x}-${idx}`}>
-                      <td className={styles.td}>{new Date(s.date || s.day || s._id || s.x).toLocaleDateString()}</td>
-                      <td className={`${styles.td} ${styles.center}`}>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(s.total || s.amount || s.y || 0)}</td>
+            <>
+              {/* KPIs */}
+              <div className={styles.kpis}>
+                <div className={styles.kpi}>
+                  <div className={styles.kpiTitle}>Total Sales</div>
+                  <div className={styles.kpiValue}>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(salesSummary?.totalSales || 0)}</div>
+                </div>
+                <div className={styles.kpi}>
+                  <div className={styles.kpiTitle}>Orders</div>
+                  <div className={styles.kpiValue}>{salesSummary?.orders || 0}</div>
+                </div>
+                <div className={styles.kpi}>
+                  <div className={styles.kpiTitle}>Avg Order Value</div>
+                  <div className={styles.kpiValue}>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(salesSummary?.aov || 0)}</div>
+                </div>
+                <div className={styles.kpi}>
+                  <div className={styles.kpiTitle}>Discount • GST</div>
+                  <div className={styles.kpiValue}>
+                    {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(salesSummary?.totalDiscount || 0)}
+                    <span className={styles.muted}> • {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(salesSummary?.totalGst || 0)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Daily breakdown */}
+              <div className={styles.tableWrap}>
+                <div className={styles.sectionTitle}>Daily Breakdown</div>
+                <table className={styles.table} ref={tableRef}>
+                  <thead className={styles.thead}>
+                    <tr>
+                      <th className={styles.th}>Date</th>
+                      <th className={`${styles.th} ${styles.center}`}>Orders</th>
+                      <th className={`${styles.th} ${styles.center}`}>Sales</th>
+                      <th className={`${styles.th} ${styles.center}`}>Discount</th>
+                      <th className={`${styles.th} ${styles.center}`}>GST</th>
+                      <th className={`${styles.th} ${styles.center}`}>Net</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {(salesDaily || []).length === 0 ? (
+                      <tr><td className={styles.td} colSpan={6} style={{ padding: '1rem', textAlign: 'center' }}>No data</td></tr>
+                    ) : (salesDaily || []).map((r, idx) => (
+                      <tr key={`${r.date}-${idx}`}>
+                        <td className={styles.td}>{new Date(r.date).toLocaleDateString()}</td>
+                        <td className={`${styles.td} ${styles.center}`}>{r.orders}</td>
+                        <td className={`${styles.td} ${styles.center}`}>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(r.sales || 0)}</td>
+                        <td className={`${styles.td} ${styles.center}`}>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(r.discount || 0)}</td>
+                        <td className={`${styles.td} ${styles.center}`}>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(r.gst || 0)}</td>
+                        <td className={`${styles.td} ${styles.center}`}>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(r.net || 0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Top lists */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
+                <div className={styles.tableWrap}>
+                  <div className={styles.sectionTitle}>Top Customers</div>
+                  <table className={styles.table}>
+                    <thead className={styles.thead}>
+                      <tr>
+                        <th className={styles.th}>Customer</th>
+                        <th className={`${styles.th} ${styles.center}`}>Orders</th>
+                        <th className={`${styles.th} ${styles.center}`}>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(topCustomers || []).length === 0 ? (
+                        <tr><td className={styles.td} colSpan={3} style={{ padding: '1rem', textAlign: 'center' }}>No data</td></tr>
+                      ) : (topCustomers || []).map((c, idx) => (
+                        <tr key={`${c.customerId || idx}`}>
+                          <td className={styles.td}>{c.name || '-'}{c.phone ? ` (${c.phone})` : ''}</td>
+                          <td className={`${styles.td} ${styles.center}`}>{c.orders || 0}</td>
+                          <td className={`${styles.td} ${styles.center}`}>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(c.total || 0)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className={styles.tableWrap}>
+                  <div className={styles.sectionTitle}>Top Products</div>
+                  <table className={styles.table}>
+                    <thead className={styles.thead}>
+                      <tr>
+                        <th className={styles.th}>Product</th>
+                        <th className={`${styles.th} ${styles.center}`}>Qty</th>
+                        <th className={`${styles.th} ${styles.center}`}>Sales</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(topProducts || []).length === 0 ? (
+                        <tr><td className={styles.td} colSpan={3} style={{ padding: '1rem', textAlign: 'center' }}>No data</td></tr>
+                      ) : (topProducts || []).map((p, idx) => (
+                        <tr key={`${p.name || idx}`}>
+                          <td className={styles.td}>{p.name || '-'}</td>
+                          <td className={`${styles.td} ${styles.center}`}>{p.qty || 0}</td>
+                          <td className={`${styles.td} ${styles.center}`}>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(p.sales || 0)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
           )}
         </>
       )}
