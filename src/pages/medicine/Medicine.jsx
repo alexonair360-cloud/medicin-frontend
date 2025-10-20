@@ -228,7 +228,15 @@ const Medicine = () => {
       {/* Header */}
       <div className={Style.headerRow}>
         <h2 className={Style.title}>Medicine Inventory</h2>
-        <button className={Style.addBtn} type="button" onClick={() => setShowAdd(true)}>
+        <button
+          className={Style.addBtn}
+          type="button"
+          onClick={() => {
+            setForm({ name: '', defaultLowStockThreshold: '', vendorId: '' });
+            setFormError('');
+            setShowAdd(true);
+          }}
+        >
           <PlusIcon />
           <span>Add Medicine</span>
         </button>
@@ -405,6 +413,46 @@ const Medicine = () => {
         )}
       >
         <p>Are you sure you want to delete <strong>{pendingDelete?.name}</strong>? This action cannot be undone.</p>
+      </Modal>
+
+      {/* Add Modal */}
+      <Modal
+        title="Add Medicine"
+        open={showAdd}
+        onClose={() => setShowAdd(false)}
+        size="lg"
+        footer={(
+          <>
+            <button className={`${Style.filterGhost} ${Style.btn}`} onClick={() => setShowAdd(false)}>Cancel</button>
+            <button className={`${Style.filterPrimary} ${Style.btn}`} onClick={submitAdd}>Save</button>
+          </>
+        )}
+      >
+        <div>
+          {formError && <div className="mb-2" style={{ color: 'var(--status-danger)' }}>{formError}</div>}
+          <div className={Style.section}>
+            <div className={Style.sectionTitle}>Vendor</div>
+            <VendorSelect
+              value={form.vendorId}
+              onChange={(v) => setForm(f => ({ ...f, vendorId: v?.id ?? v?._id ?? '' }))}
+              placeholder="Select vendor (Name and Phone)"
+            />
+            <div className="form-text">Shown as Name (Phone) to distinguish duplicates.</div>
+          </div>
+          <div className={Style.section}>
+            <div className={Style.sectionTitle}>Basic Details</div>
+            <div className={Style.sectionGrid}>
+              <div>
+                <label className="form-label">Name</label>
+                <input name="name" value={form.name} onChange={onChange} className="form-control" placeholder="e.g. Paracetamol" />
+              </div>
+              <div>
+                <label className="form-label">Low Stock Threshold</label>
+                <input name="defaultLowStockThreshold" value={form.defaultLowStockThreshold} onChange={onChange} className="form-control" type="number" min="0" placeholder="e.g. 25" />
+              </div>
+            </div>
+          </div>
+        </div>
       </Modal>
 
       {/* Edit Modal */}
