@@ -22,7 +22,7 @@ const BatchesPage = () => {
   const [pendingDelete, setPendingDelete] = useState(null);
 
   const [form, setForm] = useState({
-    batchNo: '', quantity: '', expiryDate: '', manufacturingDate: '', unitPrice: '', mrp: '', discountPercent: '', purchaseDate: ''
+    batchNo: '', quantity: '', expiryDate: '', manufacturingDate: '', unitPrice: '', mrp: '', purchaseDate: ''
   });
 
   const fmtINR = (n) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(n || 0));
@@ -51,7 +51,7 @@ const BatchesPage = () => {
   const onChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
   const openAdd = () => {
-    setForm({ batchNo: '', quantity: '', expiryDate: '', manufacturingDate: '', unitPrice: '', mrp: '', discountPercent: '', purchaseDate: '' });
+    setForm({ batchNo: '', quantity: '', expiryDate: '', manufacturingDate: '', unitPrice: '', mrp: '', purchaseDate: '' });
     setShowAdd(true);
   };
 
@@ -69,7 +69,6 @@ const BatchesPage = () => {
         manufacturingDate: form.manufacturingDate || undefined,
         unitPrice: form.unitPrice !== '' ? Number(form.unitPrice) : undefined,
         mrp: form.mrp !== '' ? Number(form.mrp) : undefined,
-        discountPercent: form.discountPercent !== '' ? Number(form.discountPercent) : undefined,
         purchaseDate: form.purchaseDate || undefined,
       });
       toast.success('Batch added');
@@ -89,7 +88,6 @@ const BatchesPage = () => {
       manufacturingDate: b.manufacturingDate ? new Date(b.manufacturingDate).toISOString().slice(0, 10) : '',
       unitPrice: b.unitPrice != null ? String(b.unitPrice) : '',
       mrp: b.mrp != null ? String(b.mrp) : '',
-      discountPercent: b.discountPercent != null ? String(b.discountPercent) : '',
       purchaseDate: b.purchaseDate ? new Date(b.purchaseDate).toISOString().slice(0, 10) : ''
     });
     setShowEdit(true);
@@ -105,7 +103,6 @@ const BatchesPage = () => {
       manufacturingDate: form.manufacturingDate || undefined,
       unitPrice: form.unitPrice !== '' ? Number(form.unitPrice) : undefined,
       mrp: form.mrp !== '' ? Number(form.mrp) : undefined,
-      discountPercent: form.discountPercent !== '' ? Number(form.discountPercent) : undefined,
       purchaseDate: form.purchaseDate || undefined,
     };
     try {
@@ -167,15 +164,13 @@ const BatchesPage = () => {
                 <th className={Style.th} scope="col">Mfg</th>
                 <th className={Style.th} scope="col">Unit Price</th>
                 <th className={Style.th} scope="col">MRP</th>
-                <th className={Style.th} scope="col">Discount %</th>
-                <th className={Style.th} scope="col">Vendor</th>
                 <th className={Style.th} scope="col">Purchase Date</th>
                 <th className={`${Style.th} ${Style.center}`} scope="col">Actions</th>
               </tr>
             </thead>
             <tbody>
               {batches.length === 0 ? (
-                <tr><td className={Style.td} colSpan={10}>No batches found.</td></tr>
+                <tr><td className={Style.td} colSpan={7}>No batches found.</td></tr>
               ) : batches.map((b) => (
                 <tr key={b._id}>
                   <td className={Style.td}>{b.batchNo}</td>
@@ -184,8 +179,6 @@ const BatchesPage = () => {
                   <td className={Style.td}>{b.manufacturingDate ? new Date(b.manufacturingDate).toLocaleDateString() : '-'}</td>
                   <td className={Style.td}>{b.unitPrice != null ? fmtINR(b.unitPrice) : '-'}</td>
                   <td className={Style.td}>{b.mrp != null ? fmtINR(b.mrp) : '-'}</td>
-                  <td className={Style.td}>{b.discountPercent != null ? `${b.discountPercent}%` : '-'}</td>
-                  <td className={Style.td}>{b.vendorId ? `${b.vendorId.name || '-'}` + (b.vendorId.phone ? ` (${b.vendorId.phone})` : '') : '-'}</td>
                   <td className={Style.td}>{b.purchaseDate ? new Date(b.purchaseDate).toLocaleDateString() : '-'}</td>
                   <td className={`${Style.td} ${Style.center}`}>
                     <button
@@ -244,14 +237,6 @@ const BatchesPage = () => {
                       <input name="mrp" type="number" step="0.01" min="0" className="form-control" value={form.mrp} onChange={onChange} />
                     </div>
                     <div className="col-md-4">
-                      <label className="form-label">Discount %</label>
-                      <input name="discountPercent" type="number" step="0.01" min="0" max="100" className="form-control" value={form.discountPercent} onChange={onChange} />
-                    </div>
-                    <div className="col-md-8">
-                      <label className="form-label">Vendor (locked)</label>
-                      <input className="form-control" value={vendorLabel} readOnly disabled />
-                    </div>
-                    <div className="col-md-4">
                       <label className="form-label">Purchase Date</label>
                       <input name="purchaseDate" type="date" className="form-control" value={form.purchaseDate} onChange={onChange} />
                     </div>
@@ -302,14 +287,6 @@ const BatchesPage = () => {
                     <div className="col-md-4">
                       <label className="form-label">MRP</label>
                       <input name="mrp" type="number" step="0.01" min="0" className="form-control" value={form.mrp} onChange={onChange} />
-                    </div>
-                    <div className="col-md-4">
-                      <label className="form-label">Discount %</label>
-                      <input name="discountPercent" type="number" step="0.01" min="0" max="100" className="form-control" value={form.discountPercent} onChange={onChange} />
-                    </div>
-                    <div className="col-md-8">
-                      <label className="form-label">Vendor (locked)</label>
-                      <input className="form-control" value={vendorLabel} readOnly disabled />
                     </div>
                     <div className="col-md-4">
                       <label className="form-label">Purchase Date</label>

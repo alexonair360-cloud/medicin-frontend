@@ -23,7 +23,7 @@ const CustomersPage = () => {
   const [error, setError] = useState('');
   const [customers, setCustomers] = useState([]);
   const [query, setQuery] = useState('');
-  const [searchBy, setSearchBy] = useState('phone'); // phone | name | email | customerId
+  const [searchBy, setSearchBy] = useState('name'); // phone | name | customerId
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [page, setPage] = useState(0); // zero-based
   const [pageSize, setPageSize] = useState(10); // 10 | 20 | 30
@@ -123,9 +123,8 @@ const CustomersPage = () => {
         <h2 className={styles.title}>Customers</h2>
         <div className={styles.toolbar}>
           <select className={`${styles.searchInput} ${styles.toolbarSelect}`} value={searchBy} onChange={(e) => setSearchBy(e.target.value)}>
-            <option value="phone">Phone</option>
             <option value="name">Name</option>
-            <option value="email">Email</option>
+            <option value="phone">Phone</option>
             <option value="customerId">Customer ID</option>
           </select>
           <input className={`${styles.searchInput} ${styles.toolbarInput}`} placeholder={`Search by ${searchBy}`} value={query} onChange={(e) => setQuery(e.target.value)} />

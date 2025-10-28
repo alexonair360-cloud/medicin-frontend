@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import styles from './ReportsPage.module.css';
 import Loader from '../../components/ui/Loader.jsx';
+import ReactPaginate from 'react-paginate';
 import { getExpiringBatches, getMedicines, getSalesReport, getStockSummary } from '../../api/reportService';
 
 const toCSV = (headers, rows) => {
@@ -46,7 +47,7 @@ const downloadExcelFromTable = (filename, tableEl) => {
 };
 
 const ReportsPage = () => {
-  const [type, setType] = useState('expiry'); // expiry | lowstock | sales
+  const [type, setType] = useState('sales'); // expiry | lowstock | sales
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const tableRef = useRef(null);
@@ -63,9 +64,17 @@ const ReportsPage = () => {
   const [medicines, setMedicines] = useState([]);
   const [stockSummary, setStockSummary] = useState([]);
   const [salesSummary, setSalesSummary] = useState(null);
-  const [salesDaily, setSalesDaily] = useState([]);
-  const [topCustomers, setTopCustomers] = useState([]);
-  const [topProducts, setTopProducts] = useState([]);
+  const [salesDaily, setSalesDaily] = useState({ items: [], total: 0, page: 1 });
+  const [topCustomers, setTopCustomers] = useState({ items: [], total: 0, page: 1 });
+  const [topProducts, setTopProducts] = useState({ items: [], total: 0, page: 1 });
+
+  // Pagination states
+  const [expiryPage, setExpiryPage] = useState(0);
+  const [lowStockPage, setLowStockPage] = useState(0);
+  const [dailyPage, setDailyPage] = useState(1);
+  const [customersPage, setCustomersPage] = useState(1);
+  const [productsPage, setProductsPage] = useState(1);
+  const pageSize = 15;
 
   useEffect(() => {
     const fetch = async () => {
@@ -73,8 +82,15 @@ const ReportsPage = () => {
       setError('');
       try {
         if (type === 'expiry') {
-          const exp = await getExpiringBatches({ days: 30 });
-          setExpiring(Array.isArray(exp) ? exp : (exp?.batches || []));
+          const exp = await getExpiringBatches({ days: 30, limit: 1000 });
+          // Handle both array and paginated response
+          if (Array.isArray(exp)) {
+            setExpiring(exp);
+          } else if (exp?.items) {
+            setExpiring(exp.items);
+          } else {
+            setExpiring(exp?.batches || []);
+          }
         } else if (type === 'lowstock') {
           const [meds, stock] = await Promise.all([
             getMedicines(),
@@ -83,12 +99,18 @@ const ReportsPage = () => {
           setMedicines(meds || []);
           setStockSummary(stock || []);
         } else if (type === 'sales') {
-          const params = { from: debouncedFrom, to: debouncedTo };
+          const params = { 
+            from: debouncedFrom, 
+            to: debouncedTo,
+            dailyPage,
+            customersPage,
+            productsPage
+          };
           const data = await getSalesReport(params);
           setSalesSummary(data?.summary || null);
-          setSalesDaily(Array.isArray(data?.daily) ? data.daily : []);
-          setTopCustomers(Array.isArray(data?.topCustomers) ? data.topCustomers : []);
-          setTopProducts(Array.isArray(data?.topProducts) ? data.topProducts : []);
+          setSalesDaily(data?.daily || { items: [], total: 0, page: 1 });
+          setTopCustomers(data?.topCustomers || { items: [], total: 0, page: 1 });
+          setTopProducts(data?.topProducts || { items: [], total: 0, page: 1 });
         }
       } catch (e) {
         setError(e?.response?.data?.message || 'Failed to load report');
@@ -97,7 +119,7 @@ const ReportsPage = () => {
       }
     };
     fetch();
-  }, [type, debouncedFrom, debouncedTo]);
+  }, [type, debouncedFrom, debouncedTo, dailyPage, customersPage, productsPage]);
 
   // Debounce date range changes for sales
   useEffect(() => {
@@ -125,6 +147,24 @@ const ReportsPage = () => {
     rows.sort((a, b) => a.qty - b.qty);
     return rows;
   }, [type, medicines, stockMap]);
+
+  // Paginated expiry data
+  const paginatedExpiring = useMemo(() => {
+    const start = expiryPage * pageSize;
+    return (expiring || []).slice(start, start + pageSize);
+  }, [expiring, expiryPage]);
+
+  // Paginated low stock data
+  const paginatedLowStock = useMemo(() => {
+    const start = lowStockPage * pageSize;
+    return lowStockRows.slice(start, start + pageSize);
+  }, [lowStockRows, lowStockPage]);
+
+  // Reset pagination when report type changes
+  useEffect(() => {
+    setExpiryPage(0);
+    setLowStockPage(0);
+  }, [type]);
 
   const onExport = () => {
     const filename = type === 'expiry' ? 'expiry_report' : type === 'lowstock' ? 'low_stock_report' : 'sales_report';
@@ -160,55 +200,107 @@ const ReportsPage = () => {
       ) : (
         <>
           {type === 'expiry' && (
-            <div className={styles.tableWrap}>
-              <table className={styles.table} ref={tableRef}>
-                <thead className={styles.thead}>
-                  <tr>
-                    <th className={styles.th}>Medicine</th>
-                    <th className={styles.th}>Batch</th>
-                    <th className={styles.th}>Expiry</th>
-                    <th className={`${styles.th} ${styles.center}`}>Qty</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(expiring || []).length === 0 ? (
-                    <tr><td className={styles.td} colSpan={4} style={{ padding: '1rem', textAlign: 'center' }}>No upcoming expiries</td></tr>
-                  ) : (expiring || []).map((b, idx) => (
-                    <tr key={`${b.batchNo || b.batch || 'batch'}-${idx}`}>
-                      <td className={styles.td}>{b.medicineId?.name || b.medicineName || b.medicine?.name || b.name || '-'}</td>
-                      <td className={styles.td}>{b.batchNo || b.batch || '-'}</td>
-                      <td className={styles.td}>{b.expiryDate ? new Date(b.expiryDate).toLocaleDateString() : (b.expiry || b.date ? new Date(b.expiry || b.date).toLocaleDateString() : '-')}</td>
-                      <td className={`${styles.td} ${styles.center}`}>{b.quantity || b.qty || 0}</td>
+            <>
+              <div className={styles.tableWrap}>
+                <table className={styles.table} ref={tableRef}>
+                  <thead className={styles.thead}>
+                    <tr>
+                      <th className={styles.th}>Medicine</th>
+                      <th className={styles.th}>Batch</th>
+                      <th className={styles.th}>Expiry</th>
+                      <th className={`${styles.th} ${styles.center}`}>Qty</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {(expiring || []).length === 0 ? (
+                      <tr><td className={styles.td} colSpan={4} style={{ padding: '1rem', textAlign: 'center' }}>No upcoming expiries</td></tr>
+                    ) : paginatedExpiring.map((b, idx) => (
+                      <tr key={`${b.batchNo || b.batch || 'batch'}-${idx}`}>
+                        <td className={styles.td}>{b.medicineId?.name || b.medicineName || b.medicine?.name || b.name || '-'}</td>
+                        <td className={styles.td}>{b.batchNo || b.batch || '-'}</td>
+                        <td className={styles.td}>{b.expiryDate ? new Date(b.expiryDate).toLocaleDateString() : (b.expiry || b.date ? new Date(b.expiry || b.date).toLocaleDateString() : '-')}</td>
+                        <td className={`${styles.td} ${styles.center}`}>{b.quantity || b.qty || 0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {expiring.length > pageSize && (
+                <div className={styles.paginationWrap}>
+                  <ReactPaginate
+                    breakLabel="…"
+                    nextLabel=">"
+                    onPageChange={(ev) => setExpiryPage(ev.selected)}
+                    pageRangeDisplayed={3}
+                    marginPagesDisplayed={1}
+                    pageCount={Math.ceil(expiring.length / pageSize)}
+                    previousLabel="<"
+                    renderOnZeroPageCount={null}
+                    forcePage={expiryPage}
+                    containerClassName={styles.pagination}
+                    pageClassName={styles.pageItem}
+                    pageLinkClassName={styles.pageLink}
+                    activeClassName={styles.active}
+                    previousClassName={styles.pageItem}
+                    nextClassName={styles.pageItem}
+                    previousLinkClassName={styles.pageLink}
+                    nextLinkClassName={styles.pageLink}
+                    disabledClassName={styles.disabled}
+                  />
+                </div>
+              )}
+            </>
           )}
 
           {type === 'lowstock' && (
-            <div className={styles.tableWrap}>
-              <table className={styles.table} ref={tableRef}>
-                <thead className={styles.thead}>
-                  <tr>
-                    <th className={styles.th}>Medicine</th>
-                    <th className={`${styles.th} ${styles.center}`}>Qty</th>
-                    <th className={`${styles.th} ${styles.center}`}>Threshold</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(lowStockRows || []).length === 0 ? (
-                    <tr><td className={styles.td} colSpan={3} style={{ padding: '1rem', textAlign: 'center' }}>No low stock items</td></tr>
-                  ) : (lowStockRows || []).map((r, idx) => (
-                    <tr key={`${r.name}-${idx}`}>
-                      <td className={styles.td}>{r.name}</td>
-                      <td className={`${styles.td} ${styles.center}`}>{r.qty}</td>
-                      <td className={`${styles.td} ${styles.center}`}>{r.threshold}</td>
+            <>
+              <div className={styles.tableWrap}>
+                <table className={styles.table} ref={tableRef}>
+                  <thead className={styles.thead}>
+                    <tr>
+                      <th className={styles.th}>Medicine</th>
+                      <th className={`${styles.th} ${styles.center}`}>Qty</th>
+                      <th className={`${styles.th} ${styles.center}`}>Threshold</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {(lowStockRows || []).length === 0 ? (
+                      <tr><td className={styles.td} colSpan={3} style={{ padding: '1rem', textAlign: 'center' }}>No low stock items</td></tr>
+                    ) : paginatedLowStock.map((r, idx) => (
+                      <tr key={`${r.name}-${idx}`}>
+                        <td className={styles.td}>{r.name}</td>
+                        <td className={`${styles.td} ${styles.center}`}>{r.qty}</td>
+                        <td className={`${styles.td} ${styles.center}`}>{r.threshold}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {lowStockRows.length > pageSize && (
+                <div className={styles.paginationWrap}>
+                  <ReactPaginate
+                    breakLabel="…"
+                    nextLabel=">"
+                    onPageChange={(ev) => setLowStockPage(ev.selected)}
+                    pageRangeDisplayed={3}
+                    marginPagesDisplayed={1}
+                    pageCount={Math.ceil(lowStockRows.length / pageSize)}
+                    previousLabel="<"
+                    renderOnZeroPageCount={null}
+                    forcePage={lowStockPage}
+                    containerClassName={styles.pagination}
+                    pageClassName={styles.pageItem}
+                    pageLinkClassName={styles.pageLink}
+                    activeClassName={styles.active}
+                    previousClassName={styles.pageItem}
+                    nextClassName={styles.pageItem}
+                    previousLinkClassName={styles.pageLink}
+                    nextLinkClassName={styles.pageLink}
+                    disabledClassName={styles.disabled}
+                  />
+                </div>
+              )}
+            </>
           )}
 
           {type === 'sales' && (
@@ -224,15 +316,12 @@ const ReportsPage = () => {
                   <div className={styles.kpiValue}>{salesSummary?.orders || 0}</div>
                 </div>
                 <div className={styles.kpi}>
-                  <div className={styles.kpiTitle}>Avg Order Value</div>
-                  <div className={styles.kpiValue}>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(salesSummary?.aov || 0)}</div>
+                  <div className={styles.kpiTitle}>Profit</div>
+                  <div className={styles.kpiValue}>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(salesSummary?.totalProfit || 0)}</div>
                 </div>
                 <div className={styles.kpi}>
-                  <div className={styles.kpiTitle}>Discount • GST</div>
-                  <div className={styles.kpiValue}>
-                    {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(salesSummary?.totalDiscount || 0)}
-                    <span className={styles.muted}> • {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(salesSummary?.totalGst || 0)}</span>
-                  </div>
+                  <div className={styles.kpiTitle}>Discount</div>
+                  <div className={styles.kpiValue}>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(salesSummary?.totalDiscount || 0)}</div>
                 </div>
               </div>
 
@@ -251,9 +340,9 @@ const ReportsPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {(salesDaily || []).length === 0 ? (
+                    {(salesDaily.items || []).length === 0 ? (
                       <tr><td className={styles.td} colSpan={6} style={{ padding: '1rem', textAlign: 'center' }}>No data</td></tr>
-                    ) : (salesDaily || []).map((r, idx) => (
+                    ) : (salesDaily.items || []).map((r, idx) => (
                       <tr key={`${r.date}-${idx}`}>
                         <td className={styles.td}>{new Date(r.date).toLocaleDateString()}</td>
                         <td className={`${styles.td} ${styles.center}`}>{r.orders}</td>
@@ -265,6 +354,30 @@ const ReportsPage = () => {
                     ))}
                   </tbody>
                 </table>
+                {salesDaily.total > 10 && (
+                  <div className={styles.paginationWrap}>
+                    <ReactPaginate
+                      breakLabel="…"
+                      nextLabel=">"
+                      onPageChange={(ev) => setDailyPage(ev.selected + 1)}
+                      pageRangeDisplayed={3}
+                      marginPagesDisplayed={1}
+                      pageCount={Math.ceil(salesDaily.total / 10)}
+                      previousLabel="<"
+                      renderOnZeroPageCount={null}
+                      forcePage={dailyPage - 1}
+                      containerClassName={styles.pagination}
+                      pageClassName={styles.pageItem}
+                      pageLinkClassName={styles.pageLink}
+                      activeClassName={styles.active}
+                      previousClassName={styles.pageItem}
+                      nextClassName={styles.pageItem}
+                      previousLinkClassName={styles.pageLink}
+                      nextLinkClassName={styles.pageLink}
+                      disabledClassName={styles.disabled}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Top lists */}
@@ -280,9 +393,9 @@ const ReportsPage = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {(topCustomers || []).length === 0 ? (
+                      {(topCustomers.items || []).length === 0 ? (
                         <tr><td className={styles.td} colSpan={3} style={{ padding: '1rem', textAlign: 'center' }}>No data</td></tr>
-                      ) : (topCustomers || []).map((c, idx) => (
+                      ) : (topCustomers.items || []).map((c, idx) => (
                         <tr key={`${c.customerId || idx}`}>
                           <td className={styles.td}>{c.name || '-'}{c.phone ? ` (${c.phone})` : ''}</td>
                           <td className={`${styles.td} ${styles.center}`}>{c.orders || 0}</td>
@@ -291,6 +404,30 @@ const ReportsPage = () => {
                       ))}
                     </tbody>
                   </table>
+                  {topCustomers.total > 10 && (
+                    <div className={styles.paginationWrap}>
+                      <ReactPaginate
+                        breakLabel="…"
+                        nextLabel=">"
+                        onPageChange={(ev) => setCustomersPage(ev.selected + 1)}
+                        pageRangeDisplayed={3}
+                        marginPagesDisplayed={1}
+                        pageCount={Math.ceil(topCustomers.total / 10)}
+                        previousLabel="<"
+                        renderOnZeroPageCount={null}
+                        forcePage={customersPage - 1}
+                        containerClassName={styles.pagination}
+                        pageClassName={styles.pageItem}
+                        pageLinkClassName={styles.pageLink}
+                        activeClassName={styles.active}
+                        previousClassName={styles.pageItem}
+                        nextClassName={styles.pageItem}
+                        previousLinkClassName={styles.pageLink}
+                        nextLinkClassName={styles.pageLink}
+                        disabledClassName={styles.disabled}
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className={styles.tableWrap}>
                   <div className={styles.sectionTitle}>Top Products</div>
@@ -303,9 +440,9 @@ const ReportsPage = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {(topProducts || []).length === 0 ? (
+                      {(topProducts.items || []).length === 0 ? (
                         <tr><td className={styles.td} colSpan={3} style={{ padding: '1rem', textAlign: 'center' }}>No data</td></tr>
-                      ) : (topProducts || []).map((p, idx) => (
+                      ) : (topProducts.items || []).map((p, idx) => (
                         <tr key={`${p.name || idx}`}>
                           <td className={styles.td}>{p.name || '-'}</td>
                           <td className={`${styles.td} ${styles.center}`}>{p.qty || 0}</td>
@@ -314,6 +451,30 @@ const ReportsPage = () => {
                       ))}
                     </tbody>
                   </table>
+                  {topProducts.total > 10 && (
+                    <div className={styles.paginationWrap}>
+                      <ReactPaginate
+                        breakLabel="…"
+                        nextLabel=">"
+                        onPageChange={(ev) => setProductsPage(ev.selected + 1)}
+                        pageRangeDisplayed={3}
+                        marginPagesDisplayed={1}
+                        pageCount={Math.ceil(topProducts.total / 10)}
+                        previousLabel="<"
+                        renderOnZeroPageCount={null}
+                        forcePage={productsPage - 1}
+                        containerClassName={styles.pagination}
+                        pageClassName={styles.pageItem}
+                        pageLinkClassName={styles.pageLink}
+                        activeClassName={styles.active}
+                        previousClassName={styles.pageItem}
+                        nextClassName={styles.pageItem}
+                        previousLinkClassName={styles.pageLink}
+                        nextLinkClassName={styles.pageLink}
+                        disabledClassName={styles.disabled}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </>

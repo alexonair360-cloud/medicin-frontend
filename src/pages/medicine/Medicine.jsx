@@ -36,7 +36,10 @@ const Medicine = () => {
   const [editing, setEditing] = useState(null); // medicine object
   const [form, setForm] = useState({
     name: '',
-    defaultLowStockThreshold: '', vendorId: '',
+    defaultLowStockThreshold: '',
+    gstPercent: '',
+    discountPercent: '',
+    vendorId: '',
   });
   const [formError, setFormError] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -172,6 +175,8 @@ const Medicine = () => {
       const payload = {
         name: form.name,
         defaultLowStockThreshold: form.defaultLowStockThreshold ? Number(form.defaultLowStockThreshold) : 0,
+        gstPercent: form.gstPercent ? Number(form.gstPercent) : 0,
+        discountPercent: form.discountPercent ? Number(form.discountPercent) : 0,
         vendorId: form.vendorId || undefined,
       };
       if (!payload.name) { setFormError('Name is required'); return; }
@@ -179,7 +184,7 @@ const Medicine = () => {
       // Optimistically update the table immediately
       setItems(prev => [created, ...prev]);
       setShowAdd(false);
-      setForm({ name: '', defaultLowStockThreshold: '', vendorId: '' });
+      setForm({ name: '', defaultLowStockThreshold: '', gstPercent: '', discountPercent: '', vendorId: '' });
       // Optionally refresh in background to stay in sync with server sorting/fields
       fetchMedicines();
       toast.success('Medicine added');
@@ -195,6 +200,8 @@ const Medicine = () => {
     setForm({
       name: m.name || '',
       defaultLowStockThreshold: typeof m.defaultLowStockThreshold === 'number' ? String(m.defaultLowStockThreshold) : '',
+      gstPercent: typeof m.gstPercent === 'number' ? String(m.gstPercent) : '',
+      discountPercent: typeof m.discountPercent === 'number' ? String(m.discountPercent) : '',
       vendorId: (m.vendorId && (m.vendorId._id || m.vendorId)) || '',
     });
     setShowEdit(true);
@@ -207,6 +214,8 @@ const Medicine = () => {
       const updates = {
         name: form.name,
         defaultLowStockThreshold: form.defaultLowStockThreshold ? Number(form.defaultLowStockThreshold) : undefined,
+        gstPercent: form.gstPercent ? Number(form.gstPercent) : undefined,
+        discountPercent: form.discountPercent ? Number(form.discountPercent) : undefined,
         vendorId: form.vendorId || undefined,
       };
       const { data: updated } = await api.put(`/medicines/${editing._id}`, updates);
@@ -232,7 +241,7 @@ const Medicine = () => {
           className={Style.addBtn}
           type="button"
           onClick={() => {
-            setForm({ name: '', defaultLowStockThreshold: '', vendorId: '' });
+            setForm({ name: '', defaultLowStockThreshold: '', gstPercent: '', discountPercent: '', vendorId: '' });
             setFormError('');
             setShowAdd(true);
           }}
@@ -270,11 +279,6 @@ const Medicine = () => {
             onClick={() => setStockFilter('out')}
             aria-pressed={stockFilter === 'out'}
           >Out of Stock</button>
-          <button
-            className={Style.filterGhost}
-            onClick={fetchStockSummary}
-            title="Refresh stock"
-          >Refresh</button>
         </div>
       </div>
 
@@ -290,6 +294,8 @@ const Medicine = () => {
               <tr>
                 <th className={Style.th} scope="col">Medicine Name</th>
                 <th className={Style.th} scope="col">Vendor</th>
+                <th className={`${Style.th} ${Style.center}`} scope="col">GST %</th>
+                <th className={`${Style.th} ${Style.center}`} scope="col">Discount %</th>
                 <th className={`${Style.th} ${Style.center}`} scope="col">Total Batches</th>
                 <th className={`${Style.th} ${Style.center}`} scope="col">Expiring Soon (30d)</th>
                 <th className={`${Style.th} ${Style.center}`} scope="col">In Stock</th>
@@ -299,12 +305,14 @@ const Medicine = () => {
             </thead>
             <tbody>
               {filteredByStock.length === 0 ? (
-                <tr><td className={Style.td} colSpan={7}>No medicines found.</td></tr>
+                <tr><td className={Style.td} colSpan={9}>No medicines found.</td></tr>
               ) : (
                 pagedItems.map((m) => (
                   <tr key={m._id}>
                     <td className={Style.td}>{m.name}</td>
                     <td className={Style.td}>{m.vendorId ? `${m.vendorId.name || '-'}` + (m.vendorId.phone ? ` (${m.vendorId.phone})` : '') : '-'}</td>
+                    <td className={`${Style.td} ${Style.center}`}>{typeof m.gstPercent === 'number' ? `${m.gstPercent}%` : '-'}</td>
+                    <td className={`${Style.td} ${Style.center}`}>{typeof m.discountPercent === 'number' ? `${m.discountPercent}%` : '-'}</td>
                     {(() => {
                       const s = statsMap[String(m._id)] || {};
                       const inStock = (typeof s.totalInStock === 'number') ? s.totalInStock : (stockMap[String(m._id)] ?? 0);
@@ -450,6 +458,14 @@ const Medicine = () => {
                 <label className="form-label">Low Stock Threshold</label>
                 <input name="defaultLowStockThreshold" value={form.defaultLowStockThreshold} onChange={onChange} className="form-control" type="number" min="0" placeholder="e.g. 25" />
               </div>
+              <div>
+                <label className="form-label">GST %</label>
+                <input name="gstPercent" value={form.gstPercent} onChange={onChange} className="form-control" type="number" min="0" max="100" step="0.01" placeholder="e.g. 18" />
+              </div>
+              <div>
+                <label className="form-label">Discount %</label>
+                <input name="discountPercent" value={form.discountPercent} onChange={onChange} className="form-control" type="number" min="0" max="100" step="0.01" placeholder="e.g. 10" />
+              </div>
             </div>
           </div>
         </div>
@@ -489,6 +505,14 @@ const Medicine = () => {
               <div>
                 <label className="form-label">Low Stock Threshold</label>
                 <input name="defaultLowStockThreshold" value={form.defaultLowStockThreshold} onChange={onChange} className="form-control" type="number" min="0" placeholder="e.g. 25" />
+              </div>
+              <div>
+                <label className="form-label">GST %</label>
+                <input name="gstPercent" value={form.gstPercent} onChange={onChange} className="form-control" type="number" min="0" max="100" step="0.01" placeholder="e.g. 18" />
+              </div>
+              <div>
+                <label className="form-label">Discount %</label>
+                <input name="discountPercent" value={form.discountPercent} onChange={onChange} className="form-control" type="number" min="0" max="100" step="0.01" placeholder="e.g. 10" />
               </div>
             </div>
           </div>

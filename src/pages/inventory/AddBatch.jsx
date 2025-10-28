@@ -23,7 +23,6 @@ const AddBatch = () => {
     manufacturingDate: '',
     unitPrice: '',
     mrp: '',
-    discountPercent: '',
     // vendorId is locked to the selected medicine's vendor
   });
   const [lockedVendor, setLockedVendor] = useState({ id: '', label: '' });
@@ -83,7 +82,6 @@ const AddBatch = () => {
       manufacturingDate: form.manufacturingDate || undefined,
       unitPrice: form.unitPrice !== '' ? Number(form.unitPrice) : undefined,
       mrp: form.mrp !== '' ? Number(form.mrp) : undefined,
-      discountPercent: form.discountPercent !== '' ? Number(form.discountPercent) : undefined,
       vendorId: lockedVendor.id || undefined,
     };
 
@@ -160,20 +158,12 @@ const AddBatch = () => {
               <label className="form-label">MRP</label>
               <input type="number" step="0.01" min="0" name="mrp" value={form.mrp} onChange={onChange} className="form-control" />
             </div>
-            <div className="col-md-4">
-              <label className="form-label">Discount %</label>
-              <input type="number" step="0.01" min="0" max="100" name="discountPercent" value={form.discountPercent} onChange={onChange} className="form-control" />
-            </div>
-            <div className="col-md-8">
-              <label className="form-label">Vendor (locked)</label>
-              <input className="form-control" value={lockedVendor.label} disabled readOnly />
-            </div>
           </div>
 
           {Number(form.quantity) > 0 && form.unitPrice !== '' && (
             <div className="form-text mt-2">
               Purchased Amount (calc): {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(
-                (Number(form.quantity || 0) * Number(form.unitPrice || 0)) * (1 - (Number(form.discountPercent || 0) / 100))
+                Number(form.quantity || 0) * Number(form.unitPrice || 0)
               )}
             </div>
           )}

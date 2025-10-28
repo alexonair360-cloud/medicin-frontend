@@ -6,6 +6,7 @@ import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 import Navbar from "./components/Navbar.jsx";
+import Billing from './pages/billing/Billing.jsx';
 import BillingPage from './pages/billing/BillingPage.jsx';
 import BillingPrint from './pages/billing/BillingPrint.jsx';
 import Medicine from "./pages/medicine/Medicine.jsx";
@@ -21,8 +22,6 @@ const CustomersPage = lazy(() => import('./pages/customers/CustomersPage.jsx'));
 const ReportsPage = lazy(() => import('./pages/reports/ReportsPage.jsx'));
 const AddBatch = lazy(() => import('./pages/inventory/AddBatch.jsx'));
 const BatchesPage = lazy(() => import('./pages/inventory/BatchesPage.jsx'));
-
-const Billing = () => <div className="container py-4"><h2>Billing</h2></div>;
 
 const App = () => {
   const [logoutOpen, setLogoutOpen] = useState(false);
@@ -95,6 +94,14 @@ const App = () => {
           element={
             <ProtectedRoute>
               <VendorOrdersPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/billing"
+          element={
+            <ProtectedRoute>
+              <Billing />
             </ProtectedRoute>
           }
         />
