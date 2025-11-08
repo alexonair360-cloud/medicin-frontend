@@ -52,10 +52,6 @@ const Billing = () => {
   const [selectedBill, setSelectedBill] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   
-  // Preview before save
-  const [showBillPreview, setShowBillPreview] = useState(false);
-  const [previewBillData, setPreviewBillData] = useState(null);
-  
   // Delete confirmation
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [billToDelete, setBillToDelete] = useState(null);
@@ -425,30 +421,15 @@ const Billing = () => {
     toast.success('SMS will be sent after billing');
   };
 
-  // Handle generate/save receipt based on print checkbox
+  // Handle generate/save receipt - directly save and print (no preview modal)
   const handleGenerateReceipt = () => {
     if (cart.length === 0) {
       toast.warn('Cart is empty');
       return;
     }
 
-    if (printReceipt) {
-      // Show preview modal if print is checked
-      const previewData = {
-        customerId: selectedCustomer,
-        items: cart,
-        cartTotals,
-        sendSMS,
-        smsCustomerPhone,
-        smsCustomerName
-      };
-      
-      setPreviewBillData(previewData);
-      setShowBillPreview(true);
-    } else {
-      // Save directly without preview if print is unchecked
-      saveBillToDatabase(false);
-    }
+    // Directly save to database with print option based on checkbox
+    saveBillToDatabase(printReceipt);
   };
 
   // Save bill to database
@@ -525,10 +506,6 @@ const Billing = () => {
       if (shouldPrint) {
         printBill(bill);
       }
-
-      // Close preview modal
-      setShowBillPreview(false);
-      setPreviewBillData(null);
 
       // Clear cart, customer selection, and SMS details
       setCart([]);
@@ -812,11 +789,12 @@ const Billing = () => {
       </div>
 
       <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1.5rem', height: 'calc(100vh - 180px)' }}>
-        {/* Left Section - 70% */}
+        {/* Left Section - Search + Cart Items Table (70%) */}
         <div style={{ flex: '0 0 70%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {/* Search Bar */}
-          <div className={Style.toolbar}>
-            <div className={Style.searchWrap}>
+          {/* Search Medicine Dropdown */}
+          <div style={{ marginBottom: '1rem', position: 'relative' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>Search Medicine</label>
+            <div className={Style.searchWrap} style={{ position: 'relative' }}>
               <SearchIcon />
               <input
                 className={Style.searchInput}
@@ -826,157 +804,232 @@ const Billing = () => {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
+            
+            {/* Dropdown */}
+            {search && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                maxHeight: '300px',
+                overflowY: 'auto',
+                background: 'white',
+                border: '1px solid #dee2e6',
+                borderRadius: '4px',
+                marginTop: '4px',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                zIndex: 1000
+              }}>
+                {loading ? (
+                  <div style={{ padding: '1rem', textAlign: 'center' }}>Loading...</div>
+                ) : medicines.length === 0 ? (
+                  <div style={{ padding: '1rem', textAlign: 'center', color: '#6c757d' }}>No medicines found</div>
+                ) : (
+                  medicines.slice(0, 10).map((m) => {
+                    const stock = stockMap[String(m._id)] || 0;
+                    const stats = statsMap[String(m._id)] || {};
+                    const batchCount = stats.totalBatches || 0;
+                    
+                    return (
+                      <div
+                        key={m._id}
+                        onClick={() => {
+                          handleAddClick(m);
+                          setSearch('');
+                        }}
+                        style={{
+                          padding: '0.75rem 1rem',
+                          borderBottom: '1px solid #f0f0f0',
+                          cursor: 'pointer',
+                          transition: 'background 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                      >
+                        <div style={{ fontWeight: 600 }}>{m.name}</div>
+                        <div style={{ fontSize: '0.85rem', color: '#6c757d', marginTop: '2px' }}>
+                          Stock: {stock} | Batches: {batchCount} | GST: {m.gstPercent}% | Disc: {m.discountPercent}%
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
           </div>
 
-          {error && <div style={{ color: 'var(--status-danger)', marginTop: '0.75rem' }}>{error}</div>}
-
-          {/* Table */}
-          {loading ? (
-            <Loader />
+          <h5 style={{ marginBottom: '1rem', fontWeight: 600 }}>Cart Items</h5>
+          
+          {cart.length === 0 ? (
+            <div style={{ padding: '2rem', textAlign: 'center', color: '#6c757d' }}>
+              <p>No items in cart</p>
+              <p style={{ fontSize: '0.9rem' }}>Search and add medicines from above</p>
+            </div>
           ) : (
             <div style={{ flex: 1, overflowY: 'auto' }}>
-            <div className={Style.tableWrap}>
-              <table className={Style.table}>
-                <thead className={Style.thead}>
-                  <tr>
-                    <th className={Style.th} scope="col">Medicine Name</th>
-                    <th className={`${Style.th} ${Style.center}`} scope="col">Stock</th>
-                    {/* <th className={`${Style.th} ${Style.center}`} scope="col">MRP</th> */}
-                    <th className={`${Style.th} ${Style.center}`} scope="col">GST %</th>
-                    <th className={`${Style.th} ${Style.center}`} scope="col">Discount %</th>
-                    <th className={`${Style.th} ${Style.center}`} scope="col">Batches</th>
-                    <th className={`${Style.th} ${Style.center}`} scope="col">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {medicines.length === 0 ? (
-                    <tr><td className={Style.td} colSpan={7}>No medicines found.</td></tr>
-                  ) : (
-                    medicines.map((m) => {
-                      const stock = stockMap[String(m._id)] || 0;
-                      const stats = statsMap[String(m._id)] || {};
-                      const batchCount = stats.totalBatches || 0;
+              <div className={Style.tableWrap}>
+                <table className={Style.table}>
+                  <thead className={Style.thead}>
+                    <tr>
+                      <th className={Style.th} scope="col">#</th>
+                      <th className={Style.th} scope="col">Medicine</th>
+                      <th className={Style.th} scope="col">Batch</th>
+                      <th className={`${Style.th} ${Style.right}`} scope="col">MRP</th>
+                      <th className={`${Style.th} ${Style.center}`} scope="col">Qty</th>
+                      <th className={`${Style.th} ${Style.center}`} scope="col">Disc%</th>
+                      <th className={`${Style.th} ${Style.center}`} scope="col">GST%</th>
+                      <th className={`${Style.th} ${Style.right}`} scope="col">Amount</th>
+                      <th className={`${Style.th} ${Style.center}`} scope="col">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cart.map((item, index) => {
+                      const itemTotal = item.mrp * item.quantity;
+                      const discount = (itemTotal * item.discountPercent) / 100;
+                      const afterDiscount = itemTotal - discount;
+                      const gst = (afterDiscount * item.gstPercent) / 100;
+                      const lineAmount = afterDiscount + gst;
                       
                       return (
-                        <tr key={m._id}>
-                          <td className={Style.td}>{m.name}</td>
-                          <td className={`${Style.td} ${Style.center}`}>{stock}</td>
-                          {/* <td className={`${Style.td} ${Style.center}`}>-</td> */}
-                          <td className={`${Style.td} ${Style.center}`}>{typeof m.gstPercent === 'number' ? `${m.gstPercent}%` : '-'}</td>
-                          <td className={`${Style.td} ${Style.center}`}>{typeof m.discountPercent === 'number' ? `${m.discountPercent}%` : '-'}</td>
-                          <td className={`${Style.td} ${Style.center}`}>{batchCount}</td>
+                        <tr key={index}>
+                          <td className={Style.td}>{index + 1}</td>
+                          <td className={Style.td}>{item.medicineName}</td>
+                          <td className={Style.td}>{item.batchNo}</td>
+                          <td className={`${Style.td} ${Style.right}`}>{fmtINR(item.mrp)}</td>
+                          <td className={`${Style.td} ${Style.center}`}>{item.quantity}</td>
+                          <td className={`${Style.td} ${Style.center}`}>{item.discountPercent}%</td>
+                          <td className={`${Style.td} ${Style.center}`}>{item.gstPercent}%</td>
+                          <td className={`${Style.td} ${Style.right}`}>{fmtINR(lineAmount)}</td>
                           <td className={`${Style.td} ${Style.center}`}>
                             <button
-                              onClick={() => handleAddClick(m)}
+                              onClick={() => {
+                                const medicine = medicines.find(m => m._id === item.medicineId);
+                                if (medicine) handleAddClick(medicine);
+                              }}
                               style={{
                                 border: 'none',
                                 background: 'transparent',
                                 color: 'var(--color-primary)',
                                 fontWeight: 600,
                                 cursor: 'pointer',
+                                marginRight: '0.5rem'
                               }}
-                            >{isMedicineInCart(m._id) ? 'Edit' : 'Add'}</button>
+                              title="Edit"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => removeFromCart(index)}
+                              style={{
+                                border: 'none',
+                                background: 'transparent',
+                                color: '#dc3545',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              }}
+                              title="Delete"
+                            >
+                              Delete
+                            </button>
                           </td>
                         </tr>
                       );
-                    })
-                  )}
-                </tbody>
-              </table>
-
-              {/* Pagination */}
-              {medicines.length > 0 && (
-                <div className={Style.paginationWrap}>
-                  <ReactPaginate
-                    breakLabel="…"
-                    nextLabel=">"
-                    onPageChange={(ev) => setPage(ev.selected)}
-                    pageRangeDisplayed={3}
-                    marginPagesDisplayed={1}
-                    pageCount={pageCount}
-                    previousLabel="<"
-                    renderOnZeroPageCount={null}
-                    forcePage={page}
-                    containerClassName={Style.pagination}
-                    pageLinkClassName={Style.pageLink}
-                    activeClassName={Style.active}
-                    previousClassName={Style.pageItem}
-                    nextClassName={Style.pageItem}
-                    previousLinkClassName={Style.pageLink}
-                    nextLinkClassName={Style.pageLink}
-                    disabledClassName={Style.disabled}
-                  />
-                </div>
-              )}
-            </div>
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Right Section - 30% - Cart */}
-        <div style={{ flex: '0 0 30%', background: '#f8f9fa', padding: '1rem', borderRadius: '8px', display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto' }}>
-          <h5 style={{ marginBottom: '1rem' }}>Cart Summary</h5>
+        {/* Right Section - Customer + Totals (30%) */}
+        <div style={{ flex: '0 0 30%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--background-light)', padding: '1rem', borderRadius: '8px' }}>
+          {error && <div style={{ color: 'var(--status-danger)', marginBottom: '1rem', fontSize: '0.9rem' }}>{error}</div>}
           
           {/* Customer Search */}
           <div style={{ marginBottom: '1rem', position: 'relative' }}>
-            <label className="form-label" style={{ fontSize: '0.9rem', fontWeight: 600 }}>Customer (Optional)</label>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <input
-                id="customer-search-input"
-                type="text"
-                className="form-control form-control-sm"
-                placeholder="Search by name or phone number..."
-                value={customerSearch}
-                onChange={(e) => setCustomerSearch(e.target.value)}
-                onFocus={() => customerSearchResults.length > 0 && setShowCustomerDropdown(true)}
-              />
-              {selectedCustomer && (
-                <button 
-                  className="btn btn-sm btn-outline-secondary"
-                  onClick={handleClearCustomer}
-                  title="Clear selection"
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>Customer (Optional)</label>
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Search customer by name, phone, or ID..."
+              value={customerSearch}
+              onChange={(e) => {
+                setCustomerSearch(e.target.value);
+                setShowCustomerDropdown(true);
+              }}
+              onFocus={() => setShowCustomerDropdown(true)}
+            />
+            {selectedCustomer && (
+              <div style={{ marginTop: '0.5rem', padding: '0.5rem', background: '#e7f3ff', borderRadius: '4px', fontSize: '0.9rem' }}>
+                <strong>{selectedCustomer.name}</strong>
+                <div style={{ fontSize: '0.85rem', color: '#6c757d' }}>
+                  {selectedCustomer.customerId} {selectedCustomer.phone && `• ${selectedCustomer.phone}`}
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedCustomer(null);
+                    setCustomerSearch('');
+                    setSendSMS(false); // Uncheck SMS when clearing customer
+                    setSmsCustomerPhone('');
+                    setSmsCustomerName('');
+                  }}
+                  style={{
+                    marginTop: '0.25rem',
+                    padding: '0.25rem 0.5rem',
+                    fontSize: '0.8rem',
+                    border: '1px solid #ccc',
+                    background: 'white',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
                 >
-                  ✕
+                  Clear
                 </button>
-              )}
-            </div>
+              </div>
+            )}
             
-            {/* Dropdown */}
-            {showCustomerDropdown && (
-              <div 
-                id="customer-search-dropdown"
-                style={{
+            {/* Customer Dropdown */}
+            {showCustomerDropdown && customerSearch && !selectedCustomer && (
+              <div style={{
                 position: 'absolute',
                 top: '100%',
                 left: 0,
                 right: 0,
+                maxHeight: '200px',
+                overflowY: 'auto',
                 background: 'white',
                 border: '1px solid #dee2e6',
                 borderRadius: '4px',
-                marginTop: '2px',
-                maxHeight: '200px',
-                overflowY: 'auto',
-                zIndex: 1000,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                marginTop: '4px',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                zIndex: 1000
               }}>
                 {searchingCustomers ? (
-                  <div style={{ padding: '0.5rem', textAlign: 'center', color: '#6c757d' }}>
-                    Searching...
-                  </div>
+                  <div style={{ padding: '0.75rem', textAlign: 'center' }}>Searching...</div>
                 ) : customerSearchResults.length === 0 ? (
-                  <div style={{ padding: '0.5rem', textAlign: 'center', color: '#6c757d' }}>
-                    No customers found
-                  </div>
+                  <div style={{ padding: '0.75rem', textAlign: 'center', color: '#6c757d' }}>No customers found</div>
                 ) : (
                   customerSearchResults.map((customer) => (
                     <div
                       key={customer._id}
-                      style={{
-                        padding: '0.5rem 0.75rem',
-                        cursor: 'pointer',
-                        borderBottom: '1px solid #f0f0f0'
+                      onClick={() => {
+                        setSelectedCustomer(customer);
+                        setCustomerSearch(customer.name);
+                        setShowCustomerDropdown(false);
+                        // Pre-fill SMS details and auto-check SMS if phone available
+                        if (customer.phone) {
+                          setSmsCustomerPhone(customer.phone);
+                          setSmsCustomerName(customer.name);
+                          setSendSMS(true); // Auto-check SMS checkbox
+                        }
                       }}
-                      onClick={() => handleSelectCustomer(customer)}
+                      style={{
+                        padding: '0.75rem',
+                        borderBottom: '1px solid #f0f0f0',
+                        cursor: 'pointer'
+                      }}
                       onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
                       onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
                     >
@@ -1019,44 +1072,9 @@ const Billing = () => {
             </div>
           </div>
 
-          {/* Cart Items */}
-          <div style={{ marginBottom: '1rem' }}>
-            {cart.length === 0 ? (
-              <p className="text-muted">No items in cart</p>
-            ) : (
-              cart.map((item, index) => (
-                <div key={index} style={{ background: 'white', padding: '0.75rem', marginBottom: '0.5rem', borderRadius: '4px', fontSize: '0.9rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                    <div style={{ flex: 1 }}>
-                      <strong>{item.medicineName}</strong>
-                      <div style={{ fontSize: '0.85rem', color: '#666' }}>Batch: {item.batchNo}</div>
-                      <div style={{ fontSize: '0.85rem', color: '#666' }}>Qty: {item.quantity} × {fmtINR(item.mrp)}</div>
-                      <div style={{ fontSize: '0.85rem', color: '#666' }}>
-                        GST: {item.gstPercent}% | Discount: {item.discountPercent}%
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => removeFromCart(index)}
-                      style={{
-                        border: 'none',
-                        background: 'transparent',
-                        color: '#dc3545',
-                        cursor: 'pointer',
-                        fontSize: '1.2rem',
-                        padding: '0',
-                        lineHeight: 1
-                      }}
-                      title="Remove"
-                    >×</button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
           {/* Totals */}
           {cart.length > 0 && (
-            <div style={{ borderTop: '2px solid #dee2e6', paddingTop: '0.75rem' }}>
+            <div style={{ borderTop: '2px solid #dee2e6', paddingTop: '0.75rem', marginTop: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
                 <span>Subtotal:</span>
                 <span>{fmtINR(cartTotals.subtotal)}</span>
@@ -1446,118 +1464,6 @@ const Billing = () => {
                 >
                   Save
                 </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bill Preview Modal - Before Saving */}
-      {showBillPreview && previewBillData && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
-          <div className="modal-dialog modal-lg">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h5 className="modal-title">Bill Preview</h5>
-                <button type="button" className="btn-close" onClick={() => setShowBillPreview(false)}></button>
-              </div>
-              <div className="modal-body">
-                <div style={{ marginBottom: '1rem' }}>
-                  <p><strong>Customer:</strong> {previewBillData.customerId?.name || 'Walk-in'}</p>
-                  {previewBillData.customerId?.phone && (
-                    <p><strong>Phone:</strong> {previewBillData.customerId.phone}</p>
-                  )}
-                </div>
-
-                <div className="table-responsive">
-                  <table className="table table-sm">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Medicine</th>
-                        <th>Batch</th>
-                        <th>MRP</th>
-                        <th>Qty</th>
-                        <th>Disc%</th>
-                        <th>GST%</th>
-                        <th className="text-end">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewBillData.items.map((item, idx) => {
-                        const itemTotal = item.mrp * item.quantity;
-                        const discount = (itemTotal * item.discountPercent) / 100;
-                        const afterDiscount = itemTotal - discount;
-                        const gst = (afterDiscount * item.gstPercent) / 100;
-                        const lineAmount = afterDiscount + gst;
-                        
-                        return (
-                          <tr key={idx}>
-                            <td>{idx + 1}</td>
-                            <td>{item.medicineName}</td>
-                            <td>{item.batchNo}</td>
-                            <td>{fmtINR(item.mrp)}</td>
-                            <td>{item.quantity}</td>
-                            <td>{item.discountPercent}%</td>
-                            <td>{item.gstPercent}%</td>
-                            <td className="text-end">{fmtINR(lineAmount)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div style={{ textAlign: 'right', marginTop: '1rem' }}>
-                  <table style={{ marginLeft: 'auto', minWidth: '300px' }}>
-                    <tbody>
-                      <tr>
-                        <td style={{ padding: '4px 8px' }}>Subtotal:</td>
-                        <td style={{ padding: '4px 8px', textAlign: 'right' }}>{fmtINR(previewBillData.cartTotals.subtotal)}</td>
-                      </tr>
-                      <tr>
-                        <td style={{ padding: '4px 8px' }}>Discount:</td>
-                        <td style={{ padding: '4px 8px', textAlign: 'right' }}>- {fmtINR(previewBillData.cartTotals.totalDiscount)}</td>
-                      </tr>
-                      <tr>
-                        <td style={{ padding: '4px 8px' }}>GST:</td>
-                        <td style={{ padding: '4px 8px', textAlign: 'right' }}>+ {fmtINR(previewBillData.cartTotals.totalGST)}</td>
-                      </tr>
-                      <tr style={{ borderTop: '2px solid #000' }}>
-                        <td style={{ padding: '8px', fontWeight: 'bold' }}>Grand Total:</td>
-                        <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>{fmtINR(previewBillData.cartTotals.grandTotal)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
-                <button 
-                  type="button" 
-                  className="btn btn-secondary" 
-                  onClick={() => setShowBillPreview(false)}
-                  disabled={submitting}
-                >
-                  Edit
-                </button>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button 
-                    type="button" 
-                    className="btn btn-outline-primary" 
-                    onClick={() => saveBillToDatabase(false)}
-                    disabled={submitting}
-                  >
-                    {submitting ? 'Saving...' : 'Save & Close'}
-                  </button>
-                  <button 
-                    type="button" 
-                    className="btn btn-primary" 
-                    onClick={() => saveBillToDatabase(true)}
-                    disabled={submitting}
-                  >
-                    {submitting ? 'Saving...' : 'Save & Print'}
-                  </button>
-                </div>
               </div>
             </div>
           </div>

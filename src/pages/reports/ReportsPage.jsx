@@ -3,6 +3,8 @@ import styles from './ReportsPage.module.css';
 import Loader from '../../components/ui/Loader.jsx';
 import ReactPaginate from 'react-paginate';
 import { getExpiringBatches, getMedicines, getSalesReport, getStockSummary } from '../../api/reportService';
+import * as XLSX from 'xlsx';
+import api from '../../api/ApiClient';
 
 const toCSV = (headers, rows) => {
   const escape = (v) => {
@@ -166,9 +168,45 @@ const ReportsPage = () => {
     setLowStockPage(0);
   }, [type]);
 
-  const onExport = () => {
-    const filename = type === 'expiry' ? 'expiry_report' : type === 'lowstock' ? 'low_stock_report' : 'sales_report';
-    downloadExcelFromTable(`${filename}.xls`, tableRef.current);
+  const onExport = async () => {
+    try {
+      let endpoint = '';
+      let filename = '';
+      let params = {};
+
+      if (type === 'sales') {
+        endpoint = '/reports/sales/export-excel';
+        filename = 'sales_report.xlsx';
+        params = { from: fromDate, to: toDate };
+      } else if (type === 'expiry') {
+        endpoint = '/reports/expiring-batches/export-excel';
+        filename = 'expiry_report.xlsx';
+        params = { days: 30 };
+      } else if (type === 'lowstock') {
+        endpoint = '/reports/low-stock/export-excel';
+        filename = 'low_stock_report.xlsx';
+        params = {};
+      }
+
+      // Download from backend
+      const response = await api.get(endpoint, {
+        params,
+        responseType: 'blob'
+      });
+      
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to export report:', error);
+      alert('Failed to export report. Please try again.');
+    }
   };
 
   return (
