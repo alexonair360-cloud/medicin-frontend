@@ -37,6 +37,7 @@ const Billing = () => {
   // Customer details for SMS
   const [showSMSModal, setShowSMSModal] = useState(false);
   const [smsCustomerPhone, setSmsCustomerPhone] = useState('');
+  const [smsCustomerName, setSmsCustomerName] = useState('');
   
   // Customer search and selection
   const [customerSearch, setCustomerSearch] = useState('');
@@ -51,6 +52,10 @@ const Billing = () => {
   const [selectedBill, setSelectedBill] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   
+  // Preview before save
+  const [showBillPreview, setShowBillPreview] = useState(false);
+  const [previewBillData, setPreviewBillData] = useState(null);
+  
   // Delete confirmation
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [billToDelete, setBillToDelete] = useState(null);
@@ -60,8 +65,9 @@ const Billing = () => {
   const [billsSearch, setBillsSearch] = useState('');
   const [billsSearchType, setBillsSearchType] = useState('billId'); // 'billId' or 'customerId'
   const [billsPage, setBillsPage] = useState(0);
-  const [billsPageSize] = useState(15);
+  const [billsPageSize] = useState(6);
   const [billsTotalCount, setBillsTotalCount] = useState(0);
+  const [showCustomerBills, setShowCustomerBills] = useState(true); // Toggle for bills with/without customer
 
   // Debounce search with 500ms delay
   useEffect(() => {
@@ -104,10 +110,11 @@ const Billing = () => {
     };
   }, [showCustomerDropdown]);
 
-  // Search customers by name
+  // Search customers by name or phone
   const searchCustomers = async (query) => {
     setSearchingCustomers(true);
     try {
+      // Search by both name and phone
       const { data } = await api.get(`/customers?q=${query}`);
       setCustomerSearchResults(Array.isArray(data) ? data : []);
       setShowCustomerDropdown(true);
@@ -309,9 +316,7 @@ const Billing = () => {
     setLoadingBills(true);
     try {
       const params = new URLSearchParams();
-      params.set('page', billsPage + 1);
-      params.set('limit', billsPageSize);
-      
+      // Don't use pagination when filtering by customer toggle - fetch all and filter on frontend
       if (billsSearch) {
         if (billsSearchType === 'billId') {
           params.set('billNumber', billsSearch);
@@ -321,10 +326,32 @@ const Billing = () => {
       }
       
       const { data } = await api.get(`/bills?${params.toString()}`);
-      const items = Array.isArray(data) ? data : (data?.items || []);
-      const total = data?.total || items.length;
+      let items = Array.isArray(data) ? data : (data?.items || []);
       
-      setAllBills(items);
+      // Filter based on customer toggle
+      if (showCustomerBills) {
+        // Show only bills with actual customers (not walk-in)
+        items = items.filter(bill => 
+          bill.customerId && 
+          bill.customerId.name !== 'Walk-in Customer' &&
+          bill.customerId.customerId
+        );
+      } else {
+        // Show only walk-in bills (no customer or walk-in customer)
+        items = items.filter(bill => 
+          !bill.customerId || 
+          !bill.customerId.customerId ||
+          bill.customerId.name === 'Walk-in Customer'
+        );
+      }
+      
+      // Apply frontend pagination
+      const total = items.length;
+      const start = billsPage * billsPageSize;
+      const end = start + billsPageSize;
+      const paginatedItems = items.slice(start, end);
+      
+      setAllBills(paginatedItems);
       setBillsTotalCount(total);
     } catch (e) {
       toast.error('Failed to load bills');
@@ -338,31 +365,19 @@ const Billing = () => {
     if (showAllReceipts) {
       fetchAllBills();
     }
-  }, [showAllReceipts, billsSearch, billsSearchType, billsPage]);
+  }, [showAllReceipts, billsSearch, billsSearchType, billsPage, showCustomerBills]);
 
   // Handle customer selection from dropdown
   const handleSelectCustomer = (customer) => {
     setSelectedCustomer(customer);
-    setCustomerSearch(`${customer.name} (${customer.customerId})`);
+    setCustomerSearch(`${customer.name}${customer.phone ? ` - ${customer.phone}` : ''}`);
     setShowCustomerDropdown(false);
-  };
-
-  // Handle "New Customer" option
-  const handleNewCustomer = async () => {
-    const name = customerSearch.trim();
-    if (!name) {
-      toast.warn('Please enter customer name');
-      return;
-    }
     
-    try {
-      const { data: newCustomer } = await api.post('/customers', { name });
-      setSelectedCustomer(newCustomer);
-      setCustomerSearch(`${newCustomer.name} (${newCustomer.customerId})`);
-      setShowCustomerDropdown(false);
-      toast.success(`New customer created: ${newCustomer.customerId}`);
-    } catch (e) {
-      toast.error('Failed to create customer');
+    // Auto-check SMS if customer has phone number
+    if (customer.phone && customer.phone.trim()) {
+      setSmsCustomerPhone(customer.phone);
+      setSmsCustomerName(customer.name);
+      setSendSMS(true);
     }
   };
 
@@ -372,45 +387,75 @@ const Billing = () => {
     setCustomerSearch('');
     setCustomerSearchResults([]);
     setShowCustomerDropdown(false);
+    // Clear SMS details when clearing customer
+    setSendSMS(false);
+    setSmsCustomerPhone('');
+    setSmsCustomerName('');
   };
 
   // Handle SMS checkbox click
   const handleSMSCheckboxChange = (checked) => {
     if (checked) {
-      if (!selectedCustomer) {
-        toast.warn('Please select a customer first');
-        return;
-      }
-      // Open modal to collect phone number
+      // Open modal to collect phone number (and name if no customer selected)
       setShowSMSModal(true);
+      // Pre-fill if customer is selected
+      if (selectedCustomer) {
+        setSmsCustomerName(selectedCustomer.name || '');
+        setSmsCustomerPhone(selectedCustomer.phone || '');
+      } else {
+        setSmsCustomerName('');
+        setSmsCustomerPhone('');
+      }
     } else {
       // Uncheck and clear SMS data
       setSendSMS(false);
       setSmsCustomerPhone('');
+      setSmsCustomerName('');
     }
   };
 
   // Save SMS customer phone
   const handleSaveSMSCustomer = () => {
     if (!smsCustomerPhone.trim()) {
-      toast.warn('Please enter customer phone number');
+      toast.warn('Phone number is required');
       return;
     }
     setSendSMS(true);
     setShowSMSModal(false);
-    toast.success('SMS will be sent to customer');
+    toast.success('SMS will be sent after billing');
   };
 
-  // Handle print receipt
-  const handlePrintReceipt = async () => {
+  // Handle generate/save receipt based on print checkbox
+  const handleGenerateReceipt = () => {
     if (cart.length === 0) {
       toast.warn('Cart is empty');
       return;
     }
 
+    if (printReceipt) {
+      // Show preview modal if print is checked
+      const previewData = {
+        customerId: selectedCustomer,
+        items: cart,
+        cartTotals,
+        sendSMS,
+        smsCustomerPhone,
+        smsCustomerName
+      };
+      
+      setPreviewBillData(previewData);
+      setShowBillPreview(true);
+    } else {
+      // Save directly without preview if print is unchecked
+      saveBillToDatabase(false);
+    }
+  };
+
+  // Save bill to database
+  const saveBillToDatabase = async (shouldPrint = false) => {
     setSubmitting(true);
     try {
-      let customerId;
+      let customerId = null;
       
       // If customer is selected, use it
       if (selectedCustomer) {
@@ -426,26 +471,28 @@ const Billing = () => {
             // Continue even if phone update fails
           }
         }
-      } else {
-        // Create or get walk-in customer
+      } else if (sendSMS && smsCustomerPhone.trim()) {
+        // No customer selected, but SMS phone is provided - CREATE a new customer
         try {
-          const { data: customers } = await api.get('/customers?search=Walk-in');
-          const walkIn = customers?.find(c => c.name === 'Walk-in Customer');
+          const customerData = {
+            phone: smsCustomerPhone.trim()
+          };
           
-          if (walkIn) {
-            customerId = walkIn._id;
-          } else {
-            const { data: newCustomer } = await api.post('/customers', {
-              name: 'Walk-in Customer'
-            });
-            customerId = newCustomer._id;
+          // Add name if provided (optional)
+          if (smsCustomerName && smsCustomerName.trim()) {
+            customerData.name = smsCustomerName.trim();
           }
+          
+          const { data: newCustomer } = await api.post('/customers', customerData);
+          customerId = newCustomer._id;
+          toast.success(`New customer created: ${newCustomer.customerId}`);
         } catch (e) {
           toast.error('Failed to create customer');
           setSubmitting(false);
           return;
         }
       }
+      // If no customer and no SMS, customerId remains null (no customer bill)
 
       // Prepare bill items
       const billItems = cart.map(item => ({
@@ -459,19 +506,29 @@ const Billing = () => {
         gstPct: item.gstPercent,
       }));
 
-      // Create bill
-      const { data: bill } = await api.post('/bills', {
-        customerId,
+      // Create bill (customerId can be null for bills without customer)
+      const billPayload = {
         items: billItems,
         notes: ''
-      });
+      };
+      
+      // Only add customerId if a customer is selected
+      if (customerId) {
+        billPayload.customerId = customerId;
+      }
+      
+      const { data: bill } = await api.post('/bills', billPayload);
 
       toast.success(`Bill created: ${bill.billNumber}`);
 
-      // Print if checkbox is checked
-      if (printReceipt) {
+      // Print if requested
+      if (shouldPrint) {
         printBill(bill);
       }
+
+      // Close preview modal
+      setShowBillPreview(false);
+      setPreviewBillData(null);
 
       // Clear cart, customer selection, and SMS details
       setCart([]);
@@ -479,6 +536,7 @@ const Billing = () => {
       setCustomerSearch('');
       setSendSMS(false);
       setSmsCustomerPhone('');
+      setSmsCustomerName('');
       
       // Refresh data
       fetchMedicines();
@@ -491,8 +549,24 @@ const Billing = () => {
     }
   };
 
-  // Print bill - same format as BillingPrint.jsx
+  // Print bill - wrapper that calls printBillWindow with auto-print
   const printBill = (bill) => {
+    printBillWindow(bill, true);
+  };
+
+  // View receipt details - open in new window with print/close buttons
+  const viewReceipt = async (billId) => {
+    try {
+      const { data: bill } = await api.get(`/bills/${billId}`);
+      // Use the same printBill function but without auto-print
+      printBillWindow(bill, false); // false = don't auto-print
+    } catch (e) {
+      toast.error('Failed to load bill details');
+    }
+  };
+  
+  // Print bill window (with optional auto-print)
+  const printBillWindow = (bill, autoPrint = true) => {
     const printWindow = window.open('', '_blank');
     const currency = (n) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(n || 0));
     const createdAt = bill.billingDate ? new Date(bill.billingDate) : (bill.createdAt ? new Date(bill.createdAt) : new Date());
@@ -532,79 +606,73 @@ const Billing = () => {
             justify-content: space-between; 
             margin-bottom: 0.5rem; 
           }
-          .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 2px solid #000;
-            padding-bottom: 0.5rem;
-            margin-bottom: 0.75rem;
+          .no-print button {
+            padding: 0.5rem 1rem;
+            border: 1px solid #ccc;
+            background: #fff;
+            border-radius: 4px;
+            cursor: pointer;
           }
-          .store-name {
-            font-size: 24px;
-            font-weight: 800;
+          .no-print button:hover { background: #f0f0f0; }
+          .header { 
+            margin-bottom: 1rem; 
+            padding-bottom: 0.5rem; 
+            border-bottom: 2px solid #000; 
           }
-          .store-subtitle {
-            font-size: 12px;
+          .store-name { 
+            font-size: 1.5rem; 
+            font-weight: 700; 
           }
-          .bill-info {
-            text-align: right;
-            font-size: 14px;
+          .bill-meta { 
+            display: flex; 
+            justify-content: space-between; 
+            margin: 1rem 0; 
           }
-          .customer-info {
-            margin-bottom: 0.5rem;
+          table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin: 1rem 0; 
           }
-          .customer-label {
-            font-weight: 700;
+          th { 
+            background: #f0f0f0; 
+            padding: 8px; 
+            text-align: left; 
+            font-weight: 600; 
+            border-bottom: 1px solid #000; 
           }
-          .customer-details {
-            font-size: 12px;
+          td { 
+            padding: 6px 4px; 
+            border-bottom: 1px solid #ddd; 
           }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 14px;
-            margin: 1rem 0;
+          .text-right { text-align: right; }
+          .text-center { text-align: center; }
+          .summary { 
+            margin-top: 1rem; 
+            text-align: right; 
           }
-          th {
-            text-align: left;
-            border-bottom: 1px solid #000;
-            padding: 6px 4px;
+          .summary table { 
+            margin-left: auto; 
+            width: 300px; 
           }
-          td {
-            padding: 6px 4px;
+          .total-row { 
+            font-weight: 700; 
+            border-top: 2px solid #000; 
           }
-          .text-right {
-            text-align: right;
+          .footer { 
+            margin-top: 2rem; 
+            text-align: center; 
+            font-style: italic; 
+            opacity: 0.7; 
           }
-          .text-center {
-            text-align: center;
+          .no-print button:first-child {
+            background: #6c757d;
+            color: white;
+            border-color: #6c757d;
           }
-          .totals-container {
-            display: flex;
-            justify-content: flex-end;
-            margin-top: 0.75rem;
-          }
-          .totals-table {
-            min-width: 320px;
-            font-size: 14px;
-          }
-          .totals-table td {
-            padding: 4px 8px;
-          }
-          .total-row td {
-            padding: 6px 8px;
-            font-weight: 800;
-            border-top: 1px solid #000;
-          }
-          .footer {
-            margin-top: 1rem;
-            font-size: 12px;
-            text-align: center;
-          }
-          button {
-            padding: 8px 16px;
-            margin: 5px;
+          .no-print button:last-child {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
             cursor: pointer;
           }
           @media print {
@@ -625,20 +693,21 @@ const Billing = () => {
           <div class="header">
             <div>
               <div class="store-name">Thangam Medicals</div>
-              <div class="store-subtitle">Pharmacy & General Stores</div>
-            </div>
-            <div class="bill-info">
-              <div><strong>Bill No:</strong> ${bill.billNumber || bill._id}</div>
-              <div><strong>Date:</strong> ${createdAt.toLocaleDateString()} ${createdAt.toLocaleTimeString()}</div>
+              <div>Pharmacy & General Stores</div>
             </div>
           </div>
 
-          <div class="customer-info">
-            <div class="customer-label">Customer</div>
-            <div>${bill.customerId?.name || '-'}</div>
-            ${bill.customerId?.customerId ? `<div class="customer-details">ID: ${bill.customerId.customerId}</div>` : ''}
-            ${bill.customerId?.phone ? `<div class="customer-details">${bill.customerId.phone}</div>` : ''}
-            ${bill.customerId?.email ? `<div class="customer-details">${bill.customerId.email}</div>` : ''}
+          <div class="bill-meta">
+            <div>
+              <strong>Bill No:</strong> ${bill.billNumber || 'N/A'}<br/>
+              <strong>Date:</strong> ${createdAt.toLocaleDateString()} ${createdAt.toLocaleTimeString()}
+            </div>
+            <div style="text-align:right">
+              <strong>Customer</strong><br/>
+              ${bill.customerId?.name || '-'}<br/>
+              ${bill.customerId?.phone ? bill.customerId.phone : ''}<br/>
+              ${bill.customerId?.customerId ? `ID: ${bill.customerId.customerId}` : ''}
+            </div>
           </div>
 
           <table>
@@ -658,8 +727,8 @@ const Billing = () => {
             </tbody>
           </table>
 
-          <div class="totals-container">
-            <table class="totals-table">
+          <div class="summary">
+            <table>
               <tbody>
                 <tr>
                   <td>Subtotal</td>
@@ -667,11 +736,11 @@ const Billing = () => {
                 </tr>
                 <tr>
                   <td>Discount</td>
-                  <td class="text-right">${currency(bill.totalDiscount)}</td>
+                  <td class="text-right">- ${currency(bill.totalDiscount)}</td>
                 </tr>
                 <tr>
                   <td>GST</td>
-                  <td class="text-right">${currency(bill.totalGst)}</td>
+                  <td class="text-right">+ ${currency(bill.totalGst)}</td>
                 </tr>
                 <tr class="total-row">
                   <td>Grand Total</td>
@@ -692,17 +761,12 @@ const Billing = () => {
     printWindow.document.write(html);
     printWindow.document.close();
     printWindow.focus();
-    setTimeout(() => printWindow.print(), 250);
-  };
-
-  // View receipt details
-  const viewReceipt = async (billId) => {
-    try {
-      const { data } = await api.get(`/bills/${billId}`);
-      setSelectedBill(data);
-      setShowReceiptModal(true);
-    } catch (e) {
-      toast.error('Failed to load bill details');
+    
+    // Auto-trigger print dialog only if autoPrint is true
+    if (autoPrint) {
+      setTimeout(() => {
+        printWindow.print();
+      }, 250);
     }
   };
 
@@ -855,13 +919,13 @@ const Billing = () => {
           
           {/* Customer Search */}
           <div style={{ marginBottom: '1rem', position: 'relative' }}>
-            <label className="form-label" style={{ fontSize: '0.9rem', fontWeight: 600 }}>Customer</label>
+            <label className="form-label" style={{ fontSize: '0.9rem', fontWeight: 600 }}>Customer (Optional)</label>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <input
                 id="customer-search-input"
                 type="text"
                 className="form-control form-control-sm"
-                placeholder="Search customer by name..."
+                placeholder="Search by name or phone number..."
                 value={customerSearch}
                 onChange={(e) => setCustomerSearch(e.target.value)}
                 onFocus={() => customerSearchResults.length > 0 && setShowCustomerDropdown(true)}
@@ -899,49 +963,29 @@ const Billing = () => {
                   <div style={{ padding: '0.5rem', textAlign: 'center', color: '#6c757d' }}>
                     Searching...
                   </div>
+                ) : customerSearchResults.length === 0 ? (
+                  <div style={{ padding: '0.5rem', textAlign: 'center', color: '#6c757d' }}>
+                    No customers found
+                  </div>
                 ) : (
-                  <>
-                    {/* New Customer Option */}
+                  customerSearchResults.map((customer) => (
                     <div
+                      key={customer._id}
                       style={{
                         padding: '0.5rem 0.75rem',
                         cursor: 'pointer',
-                        borderBottom: '1px solid #dee2e6',
-                        background: '#e7f3ff',
-                        fontWeight: 600,
-                        color: '#0d6efd'
+                        borderBottom: '1px solid #f0f0f0'
                       }}
-                      onClick={handleNewCustomer}
+                      onClick={() => handleSelectCustomer(customer)}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
                     >
-                      + New Customer: "{customerSearch}"
-                    </div>
-                    
-                    {/* Existing Customers */}
-                    {customerSearchResults.length === 0 ? (
-                      <div style={{ padding: '0.5rem', textAlign: 'center', color: '#6c757d' }}>
-                        No customers found
+                      <div style={{ fontWeight: 600 }}>{customer.name}</div>
+                      <div style={{ fontSize: '0.85rem', color: '#6c757d' }}>
+                        {customer.customerId} {customer.phone && `• ${customer.phone}`}
                       </div>
-                    ) : (
-                      customerSearchResults.map((customer) => (
-                        <div
-                          key={customer._id}
-                          style={{
-                            padding: '0.5rem 0.75rem',
-                            cursor: 'pointer',
-                            borderBottom: '1px solid #f0f0f0'
-                          }}
-                          onClick={() => handleSelectCustomer(customer)}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-                        >
-                          <div style={{ fontWeight: 600 }}>{customer.name}</div>
-                          <div style={{ fontSize: '0.85rem', color: '#6c757d' }}>
-                            {customer.customerId} {customer.phone && `• ${customer.phone}`}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </>
+                    </div>
+                  ))
                 )}
               </div>
             )}
@@ -1031,10 +1075,10 @@ const Billing = () => {
               </div>
               <button 
                 className="btn btn-primary w-100 mt-3"
-                onClick={handlePrintReceipt}
+                onClick={handleGenerateReceipt}
                 disabled={submitting}
               >
-                {submitting ? 'Processing...' : 'Generate Receipt'}
+                {submitting ? 'Processing...' : (printReceipt ? 'Generate Receipt' : 'Save Receipt')}
               </button>
             </div>
           )}
@@ -1109,13 +1153,32 @@ const Billing = () => {
       {/* View All Receipts Modal */}
       {showAllReceipts && (
         <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
-          <div className="modal-dialog modal-xl">
-            <div className="modal-content">
+          <div className="modal-dialog modal-xl" style={{ maxHeight: '90vh' }}>
+            <div className="modal-content" style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
               <div className="modal-header">
                 <h5 className="modal-title">All Receipts</h5>
                 <button type="button" className="btn-close" onClick={() => setShowAllReceipts(false)}></button>
               </div>
-              <div className="modal-body">
+              <div className="modal-body" style={{ overflowY: 'auto', flex: 1, paddingBottom: '2rem' }}>
+                {/* Toggle for Customer Bills */}
+                <div className="mb-3">
+                  <div className="form-check form-switch">
+                    <input 
+                      className="form-check-input" 
+                      type="checkbox" 
+                      id="customerBillsToggle"
+                      checked={showCustomerBills}
+                      onChange={(e) => {
+                        setShowCustomerBills(e.target.checked);
+                        setBillsPage(0);
+                      }}
+                    />
+                    <label className="form-check-label" htmlFor="customerBillsToggle">
+                      <strong>{showCustomerBills ? 'Bills with Customer' : 'Bills without Customer'}</strong>
+                    </label>
+                  </div>
+                </div>
+                
                 {/* Search Controls */}
                 <div className="row mb-3">
                   <div className="col-md-3">
@@ -1196,9 +1259,9 @@ const Billing = () => {
                       </table>
                     </div>
 
-                    {/* Pagination */}
-                    {billsTotalCount > billsPageSize && (
-                      <div className={Style.paginationWrap}>
+                    {/* Pagination - Always show when total > pageSize */}
+                    <div style={{ marginTop: '1.5rem', marginBottom: '1rem', display: 'flex', justifyContent: 'center' }}>
+                      {billsTotalCount > billsPageSize && (
                         <ReactPaginate
                           breakLabel="…"
                           nextLabel=">"
@@ -1218,8 +1281,13 @@ const Billing = () => {
                           nextLinkClassName={Style.pageLink}
                           disabledClassName={Style.disabled}
                         />
-                      </div>
-                    )}
+                      )}
+                      {billsTotalCount <= billsPageSize && billsTotalCount > 0 && (
+                        <p style={{ color: '#6c757d', fontSize: '0.9rem' }}>
+                          Showing all {billsTotalCount} bill(s)
+                        </p>
+                      )}
+                    </div>
                   </>
                 )}
               </div>
@@ -1319,17 +1387,34 @@ const Billing = () => {
           <div className="modal-dialog">
             <div className="modal-content">
               <div className="modal-header">
-                <h5 className="modal-title">Phone Number for SMS</h5>
+                <h5 className="modal-title">SMS Details</h5>
                 <button type="button" className="btn-close" onClick={() => {
                   setShowSMSModal(false);
                   setSendSMS(false);
                 }}></button>
               </div>
               <div className="modal-body">
-                <p className="text-muted mb-3">
-                  Customer: <strong>{selectedCustomer?.name} ({selectedCustomer?.customerId})</strong>
-                </p>
-                <p className="text-muted mb-3">Please provide phone number to send SMS notification.</p>
+                {selectedCustomer ? (
+                  <p className="text-muted mb-3">
+                    Customer: <strong>{selectedCustomer?.name} ({selectedCustomer?.customerId})</strong>
+                  </p>
+                ) : (
+                  <p className="text-muted mb-3">Please provide customer details for SMS notification.</p>
+                )}
+                
+                {!selectedCustomer && (
+                  <div className="mb-3">
+                    <label className="form-label">Customer Name (Optional)</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Enter customer name"
+                      value={smsCustomerName}
+                      onChange={(e) => setSmsCustomerName(e.target.value)}
+                    />
+                  </div>
+                )}
+                
                 <div className="mb-3">
                   <label className="form-label">Phone Number *</label>
                   <input
@@ -1349,6 +1434,7 @@ const Billing = () => {
                     setShowSMSModal(false);
                     setSendSMS(false);
                     setSmsCustomerPhone('');
+                    setSmsCustomerName('');
                   }}
                 >
                   Close
@@ -1360,6 +1446,118 @@ const Billing = () => {
                 >
                   Save
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bill Preview Modal - Before Saving */}
+      {showBillPreview && previewBillData && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
+          <div className="modal-dialog modal-lg">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Bill Preview</h5>
+                <button type="button" className="btn-close" onClick={() => setShowBillPreview(false)}></button>
+              </div>
+              <div className="modal-body">
+                <div style={{ marginBottom: '1rem' }}>
+                  <p><strong>Customer:</strong> {previewBillData.customerId?.name || 'Walk-in'}</p>
+                  {previewBillData.customerId?.phone && (
+                    <p><strong>Phone:</strong> {previewBillData.customerId.phone}</p>
+                  )}
+                </div>
+
+                <div className="table-responsive">
+                  <table className="table table-sm">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Medicine</th>
+                        <th>Batch</th>
+                        <th>MRP</th>
+                        <th>Qty</th>
+                        <th>Disc%</th>
+                        <th>GST%</th>
+                        <th className="text-end">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewBillData.items.map((item, idx) => {
+                        const itemTotal = item.mrp * item.quantity;
+                        const discount = (itemTotal * item.discountPercent) / 100;
+                        const afterDiscount = itemTotal - discount;
+                        const gst = (afterDiscount * item.gstPercent) / 100;
+                        const lineAmount = afterDiscount + gst;
+                        
+                        return (
+                          <tr key={idx}>
+                            <td>{idx + 1}</td>
+                            <td>{item.medicineName}</td>
+                            <td>{item.batchNo}</td>
+                            <td>{fmtINR(item.mrp)}</td>
+                            <td>{item.quantity}</td>
+                            <td>{item.discountPercent}%</td>
+                            <td>{item.gstPercent}%</td>
+                            <td className="text-end">{fmtINR(lineAmount)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ textAlign: 'right', marginTop: '1rem' }}>
+                  <table style={{ marginLeft: 'auto', minWidth: '300px' }}>
+                    <tbody>
+                      <tr>
+                        <td style={{ padding: '4px 8px' }}>Subtotal:</td>
+                        <td style={{ padding: '4px 8px', textAlign: 'right' }}>{fmtINR(previewBillData.cartTotals.subtotal)}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ padding: '4px 8px' }}>Discount:</td>
+                        <td style={{ padding: '4px 8px', textAlign: 'right' }}>- {fmtINR(previewBillData.cartTotals.totalDiscount)}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ padding: '4px 8px' }}>GST:</td>
+                        <td style={{ padding: '4px 8px', textAlign: 'right' }}>+ {fmtINR(previewBillData.cartTotals.totalGST)}</td>
+                      </tr>
+                      <tr style={{ borderTop: '2px solid #000' }}>
+                        <td style={{ padding: '8px', fontWeight: 'bold' }}>Grand Total:</td>
+                        <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>{fmtINR(previewBillData.cartTotals.grandTotal)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  onClick={() => setShowBillPreview(false)}
+                  disabled={submitting}
+                >
+                  Edit
+                </button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button 
+                    type="button" 
+                    className="btn btn-outline-primary" 
+                    onClick={() => saveBillToDatabase(false)}
+                    disabled={submitting}
+                  >
+                    {submitting ? 'Saving...' : 'Save & Close'}
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-primary" 
+                    onClick={() => saveBillToDatabase(true)}
+                    disabled={submitting}
+                  >
+                    {submitting ? 'Saving...' : 'Save & Print'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

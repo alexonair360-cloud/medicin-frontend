@@ -1,13 +1,22 @@
-import React, { useState } from 'react'
-import Style from './Signin.module.css'
-import api, { setAuthToken } from '../api/ApiClient'
-import { useNavigate } from 'react-router-dom'
-import ThangamLogo from '../assets/thangam_medicals.PNG'
+import React, { useState, useEffect } from 'react';
+import Style from './Signin.module.css';
+import api, { setAuthToken, getAuthToken } from '../api/ApiClient';
+import { useNavigate, Link } from 'react-router-dom';
+import ThangamLogo from '../assets/thangam_medicals.PNG';
 
 const Signin = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Check if user is already logged in
+  useEffect(() => {
+    const token = getAuthToken();
+    if (token) {
+      // Token exists, redirect to dashboard
+      navigate('/dashboard', { replace: true });
+    }
+  }, [navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -79,7 +88,7 @@ const Signin = () => {
           </div>
 
           <div className={Style.actions}>
-            <a href="#" className={Style.link}>Forgot your password?</a>
+            <Link to="/forgot-password" className={Style.link}>Forgot your password?</Link>
           </div>
 
           <button type="submit" className={Style.submit} disabled={loading}>

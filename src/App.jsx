@@ -1,6 +1,8 @@
 import React, { useState, Suspense, lazy } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 import Signin from "./authentication/Signin.jsx";
+import ForgotPassword from "./authentication/ForgotPassword.jsx";
+import ResetPassword from "./authentication/ResetPassword.jsx";
 import Dashboard from "./pages/dashboard/Dashboard.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -27,7 +29,7 @@ const App = () => {
   const [logoutOpen, setLogoutOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const showNavbar = location.pathname !== '/';
+  const showNavbar = location.pathname !== '/' && location.pathname !== '/forgot-password' && location.pathname !== '/reset-password';
 
   const onLogoutConfirm = () => {
     clearAuthToken();
@@ -42,6 +44,8 @@ const App = () => {
       <Suspense fallback={<Loader fullscreen />}> 
       <Routes>
         <Route path="/" element={<Signin />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route
           path="/dashboard"
           element={

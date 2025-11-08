@@ -88,7 +88,15 @@ const Dashboard = () => {
         
         // Extract daily data with sales and profit
         const dailyData = salesReport?.daily?.items || [];
-        setSalesSeries(dailyData);
+        
+        // Sort by date in ascending order (oldest to newest, left to right)
+        const sortedData = [...dailyData].sort((a, b) => {
+          const dateA = new Date(a.date);
+          const dateB = new Date(b.date);
+          return dateA - dateB; // Ascending order
+        });
+        
+        setSalesSeries(sortedData);
       } catch (e) {
         console.error('Failed to load sales data:', e);
       }

@@ -27,6 +27,10 @@ export const clearAuthToken = () => {
   delete api.defaults.headers.common.Authorization;
 };
 
+export const getAuthToken = () => {
+  return localStorage.getItem('auth_token');
+};
+
 // Initialize from storage if present
 (() => {
   const existing = localStorage.getItem('auth_token');
